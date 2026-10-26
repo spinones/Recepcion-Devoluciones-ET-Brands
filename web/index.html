@@ -120,6 +120,9 @@ const PORTALES = {
 const MARKETPLACES = Object.keys(PORTALES);
 const TIPOS = { comprador: 'Devolución del cliente', no_entregada: 'No entregada' };
 const ETAPAS = { entregada: 'Entregada en bodega', en_camino: 'En camino', por_despachar: 'Por despachar', full: 'Full: solo gestionar en portal' };
+const PROCESADAS = ['Procesada', 'Procesada con retraso'];
+const esProc = d => PROCESADAS.includes(d.estado);
+const abierta = d => d.estado === 'En ET Brands' || d.estado === 'Vencida sin procesar';
 const finDeHoy = () => { const d = ahoraChile(); d.setHours(23, 59, 59, 999); return d; };
 const venceHoy = s => s && fecha(s) <= finDeHoy();
 
@@ -156,7 +159,7 @@ function restante(vence) {
   return { ms, txt: ms >= 0 ? 'quedan ' + txt : 'vencida hace ' + txt };
 }
 function semaforo(d) {
-  if (d.estado === 'Procesada') return d.dentro_sla === 'Si' ? 'ok' : 'err';
+  if (esProc(d)) return d.dentro_sla === 'Si' ? 'ok' : 'err';
   const r = restante(d.vence_sla).ms;
   return r < 0 ? 'err' : r < (S.datos.avisoHoras || 6) * 36e5 ? 'warn' : 'ok';
 }
@@ -244,7 +247,7 @@ function cabecera() {
 }
 function nav() {
   const D = S.datos;
-  const porProcesar = D.devoluciones.filter(d => d.estado === 'En ET Brands').length;
+  const porProcesar = D.devoluciones.filter(abierta).length;
   const items = [['inicio', '🏠', 'Inicio'], ['recibir', '📦', 'Recepción', D.esperadas.length], ['pendientes', '🕓', 'Por recibir'], ['procesar', '🔍', 'Procesar', porProcesar], ['dts', '📊', 'DTS']];
   return `<nav class="tabs">${items.map(([k, ic, l, b]) => `<button data-v="${k}" ${S.vista === k ? 'aria-current="page"' : ''}><span class="ic">${ic}</span>${l}${k === 'procesar' && b ? `<span class="badge">${b}</span>` : ''}</button>`).join('')}</nav>`;
 }
@@ -282,21 +285,25 @@ function ligarLogin() {
 // inicio
 function vistaInicio() {
   const D = S.datos;
-  const enEt = D.devoluciones.filter(d => d.estado === 'En ET Brands');
+  const enEt = D.devoluciones.filter(abierta);
   const vencidas = enEt.filter(d => semaforo(d) === 'err');
   const urg = enEt.filter(d => semaforo(d) === 'warn');
-  const noId = D.devoluciones.filter(d => d.identificada === 'No' && d.estado === 'En ET Brands').length;
+  const noId = D.devoluciones.filter(d => d.identificada === 'No' && abierta(d)).length;
   const k = kpiDts(periodo('mes'));
   const cola = enEt.slice().sort((a, b) => fecha(a.vence_sla) - fecha(b.vence_sla)).slice(0, 6);
   const plazoHoy = D.esperadas.filter(e => venceHoy(e.plazo_mkp)).sort((a, b) => fecha(a.plazo_mkp) - fecha(b.plazo_mkp));
   const sinEscanear = D.esperadas.filter(e => e.etapa === 'entregada');
   const cierranHoy = enEt.filter(d => venceHoy(d.vence_sla));
+  const vencidasLista = enEt.filter(d => d.estado === 'Vencida sin procesar' || fecha(d.vence_sla) < ahoraChile());
+  const conRetraso = D.devoluciones.filter(d => d.estado === 'Procesada con retraso' && fecha(d.procesado_en) > new Date(ahoraChile() - 7 * 864e5));
   const enCamino = D.esperadas.filter(e => e.etapa === 'en_camino').length;
   const bloque = (titulo, ayuda, items, fn, tono) => `<div class="card"><div class="fila"><h2 class="esp">${titulo}</h2><span class="pill ${items.length ? tono : 'p-ok'}">${items.length}</span></div>
     <p class="sub">${ayuda}</p>${items.length ? `<div class="lista">${items.slice(0, 8).map(fn).join('')}</div>${items.length > 8 ? `<p class="sub">y ${items.length - 8} más</p>` : ''}` : '<div class="vacio">Nada pendiente.</div>'}</div>`;
   const foco = bloque('Plazo del marketplace vence hoy', 'Aceptar, apelar o revisar hoy en el portal. Las Full no llegan a la bodega: solo se gestionan.', plazoHoy, itemEsp, 'p-err')
     + bloque('Entregadas y sin escanear', 'El marketplace dice que ya llegaron a la bodega. Búscalas y recíbelas.', sinEscanear, itemEsp, 'p-err')
-    + bloque('En ET Brands: se cierran hoy', 'Recibidas que deben procesarse antes de que termine el día.', cierranHoy, itemDev, 'p-warn');
+    + bloque('Vencidas sin procesar', 'Pasó el plazo de 1 día hábil y siguen sin procesar. Cuentan como incumplimiento del DTS.', vencidasLista, itemDev, 'p-err')
+    + bloque('En ET Brands: se cierran hoy', 'Recibidas que deben procesarse antes de que termine el día.', cierranHoy.filter(d => d.estado === 'En ET Brands'), itemDev, 'p-warn')
+    + bloque('Procesadas con retraso (últimos 7 días)', 'Se procesaron después del plazo.', conRetraso, itemDev, 'p-warn');
   return `<div><h1>Hola, ${esc((S.usuario.nombre || '').split(' ')[0])}</h1><p class="sub">Actualizado ${corta(D.ahora)}</p></div>
   <div class="tiles">
     <button class="tile" data-ir="pendientes"><div class="n">${D.esperadas.length}</div><div class="l">Pendientes de recepción</div></button>
@@ -319,7 +326,7 @@ function ligarEsp() {
 
 function itemDev(d) {
   const s = semaforo(d);
-  const r = d.estado === 'Procesada' ? `Procesada ${corta(d.procesado_en)}` : restante(d.vence_sla).txt;
+  const r = esProc(d) ? `${d.estado} ${corta(d.procesado_en)}` : (d.estado === 'Vencida sin procesar' ? 'Vencida sin procesar · ' : '') + restante(d.vence_sla).txt;
   return `<div class="item s-${s}" data-dev="${esc(d.id)}" role="button" tabindex="0">
     <div class="r1"><span class="prod">${esc(d.producto || 'Producto sin identificar')}</span><span class="pill p-${s}">${esc(r)}</span></div>
     <div class="meta">${esc(d.marketplace || '—')} · ${esc(d.orden || d.codigo_escaneado)} · ${esc(d.sku || '')} · recibida ${corta(d.recibido_en)}</div></div>`;
@@ -341,7 +348,7 @@ function vistaRecibir() {
   if (sel && sel.dev) {
     const d = sel.dev;
     res = `<div class="msg warn">Esta devolución ya fue recibida el ${corta(d.recibido_en)} por ${esc(d.recibido_por)}. Estado: <b>${esc(d.estado)}</b>.</div>
-    ${d.estado === 'En ET Brands' ? `<button class="btn full" id="aProcesar">Procesarla ahora</button>` : ''}`;
+    ${abierta(d) ? `<button class="btn full" id="aProcesar">Procesarla ahora</button>` : ''}`;
   } else if (sel && sel.esp) {
     const e = sel.esp;
     res = `<div class="card"><div class="r1 fila"><h2 class="esp">${esc(e.producto || e.sku)}</h2><span class="pill p-nar">${esc(TIPOS[e.tipo] || '')}</span></div>
@@ -426,8 +433,8 @@ function abrirProceso(id) {
 function vistaProcesar() {
   const D = S.datos;
   if (S.sel && S.sel.id) return formProceso(D.devoluciones.find(x => x.id === S.sel.id));
-  const cola = D.devoluciones.filter(d => d.estado === 'En ET Brands').sort((a, b) => fecha(a.vence_sla) - fecha(b.vence_sla));
-  const hechas = D.devoluciones.filter(d => d.estado === 'Procesada').sort((a, b) => (b.procesado_en || '').localeCompare(a.procesado_en || '')).slice(0, 10);
+  const cola = D.devoluciones.filter(abierta).sort((a, b) => fecha(a.vence_sla) - fecha(b.vence_sla));
+  const hechas = D.devoluciones.filter(esProc).sort((a, b) => (b.procesado_en || '').localeCompare(a.procesado_en || '')).slice(0, 10);
   return `<div><h1>Procesar devolución</h1><p class="sub">Escanea la etiqueta para ver qué producto se espera y registrar en qué estado llegó. Plazo: 1 día hábil desde la recepción.</p></div>
   ${escaner('scP', 'Escanear etiqueta de la devolución')}
   <div class="card"><h2>Por procesar (${cola.length})</h2>${cola.length ? `<div class="lista">${cola.map(itemDev).join('')}</div>` : '<div class="vacio">Todo al día.</div>'}</div>
@@ -435,8 +442,8 @@ function vistaProcesar() {
 }
 function formProceso(d) {
   if (!d) return `<div class="msg err">No se encontró la devolución.</div><button class="btn" data-ir="procesar">Volver</button>`;
-  if (d.estado === 'Procesada') {
-    return `<div class="card"><h2>${esc(d.producto || d.codigo_escaneado)}</h2><div class="msg ok">Procesada el ${corta(d.procesado_en)} por ${esc(d.procesado_por)} · ${esc(d.condicion)} · ${esc(d.accion_mkp)} · ${d.dentro_sla === 'Si' ? 'dentro de plazo' : 'fuera de plazo'}</div>
+  if (esProc(d)) {
+    return `<div class="card"><h2>${esc(d.producto || d.codigo_escaneado)}</h2><div class="msg ok">Procesada el ${corta(d.procesado_en)} por ${esc(d.procesado_por)} · ${esc(d.condicion)} · ${esc(d.accion_mkp)} · ${d.dentro_sla === 'Si' ? 'dentro de plazo' : 'con retraso'}</div>
     ${linkPortal(d)}<button class="btn sec" id="volver">Volver</button></div>`;
   }
   const F = S.form, r = restante(d.vence_sla), s = semaforo(d);
@@ -510,7 +517,7 @@ function ligarProcesar() {
       if (!j.ok) throw new Error(j.error);
       await cargar(true);
       S.form = null; S.sel = { id: d.id };
-      S.aviso = { t: 'ok', m: `Procesada ${j.devolucion.dentro_sla === 'Si' ? 'dentro de plazo' : 'fuera de plazo'}.${j.devolucion.accion_mkp !== 'Sin acción' ? ' Falta gestionarla en el marketplace.' : ''}` };
+      S.aviso = { t: 'ok', m: `Procesada ${j.devolucion.dentro_sla === 'Si' ? 'dentro de plazo' : 'con retraso'}.${j.devolucion.accion_mkp !== 'Sin acción' ? ' Falta gestionarla en el marketplace.' : ''}` };
       render();
     } catch (e) { S.aviso = { t: 'err', m: e.message }; render(); }
   };
@@ -534,17 +541,19 @@ function periodo(p) {
 }
 function kpiDts([desde, hasta]) {
   const ahora = ahoraChile();
-  const l = S.datos.devoluciones.filter(d => { const r = fecha(d.recibido_en); return r && r >= desde && r < hasta; });
+  // El DTS cuenta desde el inicio de la app nueva y no incluye lo registrado en la app anterior.
+  const inicio = fecha((S.datos.inicioDts || '2026-10-26') + ' 00:00:00');
+  const l = S.datos.devoluciones.filter(d => { const r = fecha(d.recibido_en); return r && r >= desde && r < hasta && r >= inicio && d.origen !== 'App anterior'; });
   // Entran al indicador las ya procesadas y las que vencieron sin procesar; las que siguen en plazo aún no cuentan.
-  const evaluables = l.filter(d => d.estado === 'Procesada' || fecha(d.vence_sla) < ahora);
-  const fueraSla = evaluables.filter(d => d.estado !== 'Procesada' || d.dentro_sla !== 'Si');
+  const evaluables = l.filter(d => esProc(d) || fecha(d.vence_sla) < ahora);
+  const fueraSla = evaluables.filter(d => !esProc(d) || d.dentro_sla !== 'Si');
   const noGest = evaluables.filter(d => d.verif_mkp === 'No gestionada');
-  const cumple = evaluables.filter(d => d.estado === 'Procesada' && d.dentro_sla === 'Si' && d.verif_mkp !== 'No gestionada');
+  const cumple = evaluables.filter(d => esProc(d) && d.dentro_sla === 'Si' && d.verif_mkp !== 'No gestionada');
   const horas = evaluables.filter(d => d.horas_proceso).map(d => +d.horas_proceso);
   return {
     recibidas: l.length, evaluables: evaluables.length, cumple: cumple.length, fueraSla, noGest,
-    vencidasAbiertas: evaluables.filter(d => d.estado !== 'Procesada').length,
-    verifPend: l.filter(d => d.estado === 'Procesada' && (d.verif_mkp || 'Pendiente') === 'Pendiente').length,
+    vencidasAbiertas: evaluables.filter(d => !esProc(d)).length,
+    verifPend: l.filter(d => esProc(d) && (d.verif_mkp || 'Pendiente') === 'Pendiente').length,
     pct: evaluables.length ? Math.round(cumple.length / evaluables.length * 100) : null,
     horasProm: horas.length ? Math.round(horas.reduce((a, b) => a + b, 0) / horas.length * 10) / 10 : null
   };
@@ -553,14 +562,14 @@ function vistaDts() {
   const k = kpiDts(periodo(S.periodo));
   const malas = [...new Set([...k.fueraSla, ...k.noGest])];
   const color = k.pct === null ? 'var(--gris)' : k.pct >= 95 ? 'var(--ok)' : k.pct >= 85 ? 'var(--warn)' : 'var(--err)';
-  return `<div><h1>Indicador DTS de devoluciones</h1><p class="sub">Cumple la devolución procesada dentro de 1 día hábil desde su recepción y gestionada en el marketplace (verificación diaria en el portal).</p></div>
+  return `<div><h1>Indicador DTS de devoluciones</h1><p class="sub">Cumple la devolución procesada dentro de 1 día hábil desde su recepción y gestionada en el marketplace (verificación diaria en el portal). Cuenta desde el ${corta((S.datos.inicioDts || '2026-10-26') + ' 00:00:00').split(',')[0]}; lo registrado en la app anterior no se considera.</p></div>
   <div class="chips">${[['semana', 'Esta semana'], ['mes', 'Este mes'], ['mesAnt', 'Mes anterior'], ['30', 'Últimos 30 días']].map(([v, l]) => `<button class="chip" data-p="${v}" aria-pressed="${S.periodo === v}">${l}</button>`).join('')}</div>
   <div class="card"><div class="fila"><div class="esp"><div class="big" style="color:${color}">${k.pct === null ? '—' : k.pct + '%'}</div><div class="sub">${k.cumple} de ${k.evaluables} devoluciones cumplen</div></div>
     <div class="kv"><span>Recibidas</span><b>${k.recibidas}</b><span>Fuera de plazo</span><b>${k.fueraSla.length}</b><span>Vencidas sin procesar</span><b>${k.vencidasAbiertas}</b>
     <span>No gestionadas en marketplace</span><b>${k.noGest.length}</b><span>Verificación pendiente</span><b>${k.verifPend}</b><span>Horas hábiles promedio</span><b>${k.horasProm ?? '—'}</b></div></div></div>
   <div class="card"><h2>Incumplimientos (${malas.length})</h2>${malas.length ? `<div class="tbl"><table><thead><tr><th>Recibida</th><th>Producto</th><th>Marketplace</th><th>Orden</th><th>Motivo del incumplimiento</th></tr></thead><tbody>
     ${malas.map(d => `<tr><td class="mono">${corta(d.recibido_en)}</td><td>${esc(d.producto || d.codigo_escaneado)}</td><td>${esc(d.marketplace)}</td><td class="mono">${esc(d.orden)}</td>
-    <td>${[d.estado !== 'Procesada' ? 'Vencida sin procesar' : d.dentro_sla !== 'Si' ? `Procesada fuera de plazo (${esc(d.horas_proceso)} h)` : '', d.verif_mkp === 'No gestionada' ? 'No gestionada en marketplace' + (d.verif_detalle ? ': ' + esc(d.verif_detalle) : '') : ''].filter(Boolean).join(' · ')}</td></tr>`).join('')}
+    <td>${[!esProc(d) ? 'Vencida sin procesar' : d.dentro_sla !== 'Si' ? `Procesada con retraso (${esc(d.horas_proceso)} h)` : '', d.verif_mkp === 'No gestionada' ? 'No gestionada en marketplace' + (d.verif_detalle ? ': ' + esc(d.verif_detalle) : '') : ''].filter(Boolean).join(' · ')}</td></tr>`).join('')}
   </tbody></table></div>` : '<div class="vacio">Sin incumplimientos en el período.</div>'}</div>`;
 }
 function ligarDts() { document.querySelectorAll('[data-p]').forEach(b => b.onclick = () => { S.periodo = b.dataset.p; render(); }); }
