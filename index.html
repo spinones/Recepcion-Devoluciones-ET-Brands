@@ -395,7 +395,7 @@ function vistaRecibir() {
       : `<div class="msg warn">No hay devoluciones pendientes de este producto.</div>
       <button class="btn full" id="noIdentProd">Recibir como no identificada (${esc(P.skus[0])})</button>`}</div>`;
   } else if (sel && sel.nada) {
-    res = `<div class="card"><div class="msg warn">"${esc(sel.codigo)}" no está en las devoluciones esperadas.</div>
+    res = sel.buscando ? `<div class="card"><div class="msg warn">Buscando "${esc(sel.codigo)}" en los marketplaces…</div></div>` : `<div class="card"><div class="msg warn">"${esc(sel.codigo)}" no está en las devoluciones esperadas ni en los marketplaces.</div>
       <p class="sub"><b>Escanea otra etiqueta del mismo paquete.</b> Las de 99minutos u otros couriers suelen traer debajo la etiqueta original de Mercado Libre o del marketplace. También sirve escribir el número de venta u orden (Ripley lo imprime arriba, ej. 25271009801-A). La app guarda ambos códigos.</p>
       <p class="sub">Si ninguna etiqueta aparece, recíbela como no identificada: se une sola cuando el marketplace la informe.</p>
       <label class="f">Marketplace<select id="nMk"><option value="">Elegir…</option>${MARKETPLACES.map(m => `<option>${m}</option>`).join('')}</select></label>
@@ -414,6 +414,7 @@ function ligarRecibir() {
     const cod = previo && (r.dev || r.esp) ? previo + ' ' + txt : txt;
     S.aviso = null;
     S.sel = r.dev ? { dev: r.dev, codigo: cod } : r.esp ? { esp: r.esp, codigo: cod } : r.prod ? { prod: r.prod } : { nada: true, codigo: previo ? previo + ' ' + txt : txt };
+    if (S.sel.nada) return buscarEnLinea(S.sel.codigo);
     render();
   });
   const c = $('#confirmar');
@@ -434,6 +435,22 @@ function ligarRecibir() {
   if (np) np.onclick = () => recibir({ codigo: '', marketplace: '', sku: S.sel.prod.skus[0], producto: S.sel.prod.nombre });
 }
 function alertaCampo(sel, m) { const el = $(sel); el.style.borderColor = 'var(--err)'; el.focus(); if (!el.previousElementSibling || !el.previousElementSibling.classList.contains('msg')) el.insertAdjacentHTML('beforebegin', `<div class="msg err">${esc(m)}</div>`); }
+// No está en la lista: el servidor lo busca en ProfitGuard y MELI (envíos cancelados, Flex, etc.).
+async function buscarEnLinea(codigo) {
+  S.sel = { nada: true, codigo, buscando: true }; render();
+  try {
+    const j = await api('buscarCodigo', { codigo });
+    if (j.ok && j.esperada) {
+      S.datos.esperadas.push(j.esperada);
+      S.sel = { esp: j.esperada, codigo };
+      S.aviso = { t: 'ok', m: 'No estaba en la lista; la encontré en ' + j.esperada.marketplace + '.' };
+    } else if (j.ok && j.yaRecibida && j.devolucion) {
+      S.sel = { dev: j.devolucion, codigo };
+    } else S.sel = { nada: true, codigo };
+  } catch (e) { S.sel = { nada: true, codigo }; }
+  render();
+}
+
 async function recibir(body) {
   document.querySelectorAll('#confirmar,#noIdent').forEach(b => b.disabled = true);
   try {
