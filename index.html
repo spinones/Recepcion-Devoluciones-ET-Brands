@@ -107,7 +107,7 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 // ====== CONFIGURACIÓN: pega aquí la URL /exec del Apps Script publicado ======
-const VERSION = '2026.10.26-7';
+const VERSION = '2026.10.26-8';
 const API_URL = 'https://script.google.com/macros/s/AKfycbxYHuQd_UwrjCn3LQ0Y_q35DRnTWrO-Yx3UI8MLodUQFWnZaXGCi_zgbD1rwylW-f7k/exec';
 // ============================================================================
 
@@ -176,20 +176,26 @@ async function sha256(t) { const b = await crypto.subtle.digest('SHA-256', new T
 
 async function cargarCatalogo() {
   try {
-    const g = JSON.parse(localStorage.getItem('rd_catalogo') || 'null');
+    const g = JSON.parse(localStorage.getItem('rd_catalogo2') || 'null');
     if (g && Date.now() - g.t < 20 * 36e5) { S.catalogo = indexar(g.p); return; }
   } catch (e) {}
   try {
     const j = await api('catalogo');
     if (!j.ok) return;
     S.catalogo = indexar(j.productos);
-    try { localStorage.setItem('rd_catalogo', JSON.stringify({ t: Date.now(), p: j.productos })); } catch (e) {}
+    try { localStorage.setItem('rd_catalogo2', JSON.stringify({ t: Date.now(), p: j.productos })); } catch (e) {}
   } catch (e) { /* sin catálogo: el EAN no se reconoce, lo demás funciona */ }
 }
 // EAN sin ceros a la izquierda → [{sku, nombre}]
+// También arma "packs que contienen cada SKU", para que el EAN de la unidad muestre las devoluciones de sus packs.
+let packsDe = {};
 function indexar(prods) {
-  const m = {};
-  prods.forEach(([sku, ean, nombre]) => { const k = String(ean || '').replace(/\D/g, '').replace(/^0+/, ''); if (k) (m[k] = m[k] || []).push({ sku, nombre }); });
+  const m = {}; packsDe = {};
+  prods.forEach(([sku, ean, nombre, comp]) => {
+    const k = String(ean || '').replace(/\D/g, '').replace(/^0+/, '');
+    if (k) (m[k] = m[k] || []).push({ sku, nombre });
+    String(comp || '').split(',').filter(Boolean).forEach(c => (packsDe[c] = packsDe[c] || []).includes(sku) || packsDe[c].push(sku));
+  });
   return m;
 }
 function porEan(texto) {
@@ -251,7 +257,13 @@ function buscar(texto) {
   const esp = D.esperadas.find(e => toks.some(t => coincide(t, String(e.codigos || '').split('|').concat([e.orden]).map(limpiar))));
   if (esp) return { esp };
   const prods = porEan(texto);
-  if (prods) return { prod: { skus: prods.map(p => p.sku), nombre: prods[0].nombre, ean: texto } };
+  if (prods) {
+    const base = prods.map(p => p.sku);
+    const packs = base.flatMap(s => packsDe[s] || []);
+    // Respaldo si un pack no tiene composición en el catálogo: SKU + "X2", "X3", etc.
+    const porNombre = D.esperadas.concat(D.devoluciones).map(e => e.sku).filter(s => s && base.some(b => s.startsWith(b + 'X') && /^\d+$/.test(s.slice(b.length + 1))));
+    return { prod: { skus: [...new Set(base.concat(packs, porNombre))], nombre: prods[0].nombre, ean: texto } };
+  }
   return {};
 }
 
