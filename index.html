@@ -1,0 +1,583 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Recepción Devoluciones ET Brands</title>
+<meta name="theme-color" content="#111111">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<style>
+  :root{
+    --negro:#111111; --naranja:#E94D1A; --naranja-suave:#fdece5; --fondo:#f5f4f1; --card:#ffffff;
+    --texto:#1c1b18; --gris:#6f6d66; --borde:#e2dfd8;
+    --ok:#1d8a5f; --ok-bg:#e3f4ec; --warn:#a96a00; --warn-bg:#fdf1d8; --err:#c0392b; --err-bg:#fbe6e3;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--fondo);color:var(--texto);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  body{padding-bottom:calc(72px + env(safe-area-inset-bottom,0px))}
+  button,input,select,textarea{font:inherit}
+  header.top{position:sticky;top:0;z-index:5;background:var(--negro);color:#fff;padding:calc(10px + env(safe-area-inset-top,0px)) 16px 10px;display:flex;align-items:center;gap:12px}
+  header.top img{height:30px;background:#fff;border-radius:6px;padding:3px 6px}
+  header.top .t{font-weight:700;font-size:1rem;flex:1;min-width:0}
+  header.top .u{font-size:.8rem;color:#cfcac0;text-align:right}
+  header.top .u a{color:#fff}
+  main{max-width:900px;margin:0 auto;padding:16px;display:grid;gap:16px}
+  nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:5;background:var(--card);border-top:1px solid var(--borde);display:flex;padding-bottom:env(safe-area-inset-bottom,0px)}
+  nav.tabs button{flex:1;border:0;background:none;padding:9px 2px 8px;font-size:.72rem;color:var(--gris);display:grid;justify-items:center;gap:2px;cursor:pointer;position:relative}
+  nav.tabs button .ic{font-size:1.25rem;line-height:1}
+  nav.tabs button[aria-current="page"]{color:var(--naranja);font-weight:600}
+  nav.tabs .badge{position:absolute;top:4px;left:calc(50% + 6px);background:var(--naranja);color:#fff;border-radius:99px;font-size:.62rem;padding:0 5px;font-weight:700}
+  @media (min-width:900px){
+    body{padding-bottom:0}
+    nav.tabs{position:sticky;top:50px;bottom:auto;border:0;border-bottom:1px solid var(--borde);justify-content:center}
+    nav.tabs button{flex:0 0 130px;font-size:.85rem}
+  }
+  h1{font-size:1.3rem;margin:0}
+  h2{font-size:1.05rem;margin:0}
+  .sub{color:var(--gris);font-size:.88rem;margin:2px 0 0}
+  .card{background:var(--card);border:1px solid var(--borde);border-radius:12px;padding:14px 16px;display:grid;gap:10px;min-width:0}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+  .tile{background:var(--card);border:1px solid var(--borde);border-radius:12px;padding:12px 14px;cursor:pointer;text-align:left}
+  .tile .n{font-size:2rem;font-weight:800;line-height:1.1;font-variant-numeric:tabular-nums}
+  .tile .l{font-size:.8rem;color:var(--gris)}
+  .tile.alert{border-color:var(--err)} .tile.alert .n{color:var(--err)}
+  .scan{display:flex;gap:8px}
+  .scan input{flex:1;min-width:0;padding:13px 14px;border:2px solid var(--negro);border-radius:10px;font-size:1.05rem;font-family:ui-monospace,Consolas,monospace}
+  .scan input:focus{outline:none;border-color:var(--naranja)}
+  .btn{border:0;border-radius:10px;padding:12px 16px;font-weight:600;cursor:pointer;background:var(--negro);color:#fff}
+  .btn.nar{background:var(--naranja)} .btn.sec{background:var(--card);color:var(--texto);border:1px solid var(--borde)}
+  .btn.full{width:100%;padding:14px;font-size:1rem}
+  .btn:disabled{opacity:.5;cursor:default}
+  .btn:focus-visible,.opt:focus-visible,.tile:focus-visible{outline:3px solid var(--naranja);outline-offset:2px}
+  .msg{border-radius:10px;padding:10px 12px;font-size:.92rem}
+  .msg.ok{background:var(--ok-bg);color:var(--ok)} .msg.err{background:var(--err-bg);color:var(--err)} .msg.warn{background:var(--warn-bg);color:var(--warn)}
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:.9rem}
+  .kv span{color:var(--gris)} .kv b{font-weight:600;overflow-wrap:anywhere}
+  .mono{font-family:ui-monospace,Consolas,monospace;font-variant-numeric:tabular-nums}
+  .pill{display:inline-block;font-size:.7rem;font-weight:700;letter-spacing:.03em;text-transform:uppercase;border-radius:99px;padding:2px 8px;white-space:nowrap}
+  .p-ok{background:var(--ok-bg);color:var(--ok)} .p-warn{background:var(--warn-bg);color:var(--warn)} .p-err{background:var(--err-bg);color:var(--err)} .p-gris{background:#eceae4;color:var(--gris)} .p-nar{background:var(--naranja-suave);color:var(--naranja)}
+  .lista{display:grid;gap:8px}
+  .item{background:var(--card);border:1px solid var(--borde);border-left:5px solid var(--borde);border-radius:10px;padding:10px 12px;display:grid;gap:4px;cursor:pointer;min-width:0}
+  .item.s-ok{border-left-color:var(--ok)} .item.s-warn{border-left-color:var(--warn)} .item.s-err{border-left-color:var(--err)}
+  .item .r1{display:flex;justify-content:space-between;gap:8px;align-items:baseline;flex-wrap:wrap}
+  .item .prod{font-weight:600;overflow-wrap:anywhere}
+  .item .meta{font-size:.8rem;color:var(--gris);overflow-wrap:anywhere}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{border:1px solid var(--borde);background:var(--card);border-radius:99px;padding:5px 11px;font-size:.82rem;cursor:pointer}
+  .chip[aria-pressed="true"]{background:var(--negro);color:#fff;border-color:var(--negro)}
+  .opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+  .opt{border:2px solid var(--borde);background:var(--card);border-radius:10px;padding:11px 10px;cursor:pointer;text-align:left;font-size:.9rem}
+  .opt small{display:block;color:var(--gris);font-size:.75rem}
+  .opt[aria-pressed="true"]{border-color:var(--naranja);background:var(--naranja-suave)}
+  label.f{display:grid;gap:4px;font-size:.85rem;color:var(--gris)}
+  label.f input,label.f select,label.f textarea{padding:10px 12px;border:1px solid var(--borde);border-radius:8px;color:var(--texto);background:#fff}
+  .fotos{display:flex;flex-wrap:wrap;gap:8px}
+  .fotos img{width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid var(--borde)}
+  .tbl{overflow-x:auto}
+  table{border-collapse:collapse;width:100%;font-size:.85rem;min-width:560px}
+  th{text-align:left;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:var(--gris);padding:8px;border-bottom:1px solid var(--borde)}
+  td{padding:8px;border-bottom:1px solid var(--borde);vertical-align:top}
+  .big{font-size:2.6rem;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+  .login{max-width:360px;margin:8vh auto;padding:0 16px;display:grid;gap:14px}
+  .login img{max-width:200px;justify-self:center}
+  #cam{position:fixed;inset:0;z-index:20;background:rgba(0,0,0,.92);display:grid;place-items:center;padding:16px}
+  #cam[hidden],[hidden]{display:none!important}
+  #cam .box{width:min(480px,100%);display:grid;gap:12px}
+  #lector{background:#000;border-radius:12px;overflow:hidden}
+  .vacio{color:var(--gris);text-align:center;padding:18px;font-size:.9rem}
+  .fila{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .esp{flex:1}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="cam" hidden>
+  <div class="box">
+    <div id="lector"></div>
+    <p class="sub" style="color:#ddd;text-align:center">Apunta al código de barras o QR de la etiqueta</p>
+    <button class="btn sec full" id="camCerrar">Cerrar cámara</button>
+  </div>
+</div>
+
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script>
+// ====== CONFIGURACIÓN: pega aquí la URL /exec del Apps Script publicado ======
+const API_URL = 'https://script.google.com/macros/s/AKfycbxYHuQd_UwrjCn3LQ0Y_q35DRnTWrO-Yx3UI8MLodUQFWnZaXGCi_zgbD1rwylW-f7k/exec';
+// ============================================================================
+
+const PORTALES = {
+  'Mercado Libre': 'https://vendedores.mercadolibre.cl/post-purchase/post-sales?main.filter=returns',
+  'Falabella': 'https://sellercenter.falabella.com/order/return',
+  'Ripley': 'https://sellercenter.ripleylabs.com/incidence/returns',
+  'Paris': 'https://marketplace.paris.cl/es/seller/sales/returns',
+  'Walmart': 'https://seller.walmart.com/orders/returns'
+};
+const MARKETPLACES = Object.keys(PORTALES);
+const TIPOS = { comprador: 'Devolución del cliente', no_entregada: 'No entregada' };
+const ETAPAS = { entregada: 'Entregada en bodega', en_camino: 'En camino', por_despachar: 'Por despachar', full: 'Full: solo gestionar en portal' };
+const PROCESADAS = ['Procesada', 'Procesada con retraso'];
+const esProc = d => PROCESADAS.includes(d.estado);
+const abierta = d => d.estado === 'En ET Brands' || d.estado === 'Vencida sin procesar';
+const finDeHoy = () => { const d = ahoraChile(); d.setHours(23, 59, 59, 999); return d; };
+const venceHoy = s => s && fecha(s) <= finDeHoy();
+
+const CONDICIONES = [
+  { v: 'Sin fallas', d: 'Llega como se envió', cl: 'Reintegrable' },
+  { v: 'Packing dañado', d: 'Caja o empaque dañado, producto OK', cl: 'Reacondicionable' },
+  { v: 'Producto usado', d: 'Sucio, con uso o pelos', cl: 'Reacondicionable' },
+  { v: 'Incompleto', d: 'Faltan piezas o accesorios', cl: 'Reacondicionable' },
+  { v: 'Producto dañado', d: 'Roto o no funciona', cl: 'Merma' },
+  { v: 'Producto erróneo', d: 'No es el producto enviado', cl: 'Merma' }
+];
+const CLASIFICACIONES = ['Reintegrable', 'Reacondicionable', 'Merma'];
+const ACCIONES = [
+  { v: 'Aceptar', d: 'La devolución está conforme' },
+  { v: 'Apelar', d: 'Falabella / Ripley: pedir revisión' },
+  { v: 'Reclamar', d: 'MELI: reclamo con evidencia' },
+  { v: 'Sin acción', d: 'No entregada: no hay nada que gestionar' }
+];
+
+let S = { token: null, usuario: null, datos: null, vista: 'inicio', filtroMk: 'Todos', busqueda: '', sel: null, form: null, aviso: null, periodo: 'mes' };
+try { const g = JSON.parse(localStorage.getItem('rd_sesion') || 'null'); if (g) { S.token = g.token; S.usuario = g.usuario; } } catch (e) {}
+
+// ---------- utilidades ----------
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const limpiar = s => String(s || '').toUpperCase().replace(/[^A-Z0-9-]/g, '');
+const fecha = s => { if (!s) return null; const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?/); return m ? new Date(+m[1], m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0)) : null; };
+const ahoraChile = () => { const d = S.datos && S.datos._base; return d ? new Date(d.servidor.getTime() + (Date.now() - d.local)) : new Date(); };
+const corta = s => { const d = fecha(s); return d ? d.toLocaleString('es-CL', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'; };
+function restante(vence) {
+  const ms = fecha(vence) - ahoraChile();
+  const abs = Math.abs(ms), h = Math.floor(abs / 36e5), m = Math.floor(abs % 36e5 / 6e4);
+  const txt = h >= 24 ? `${Math.floor(h / 24)} d ${h % 24} h` : `${h} h ${m} min`;
+  return { ms, txt: ms >= 0 ? 'quedan ' + txt : 'vencida hace ' + txt };
+}
+function semaforo(d) {
+  if (esProc(d)) return d.dentro_sla === 'Si' ? 'ok' : 'err';
+  const r = restante(d.vence_sla).ms;
+  return r < 0 ? 'err' : r < (S.datos.avisoHoras || 6) * 36e5 ? 'warn' : 'ok';
+}
+
+async function api(action, body = {}) {
+  if (API_URL.startsWith('PEGAR')) throw new Error('Falta configurar API_URL en index.html');
+  const r = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action, token: S.token, ...body }) });
+  const j = await r.json();
+  if (j.sesion === false) { salir(); throw new Error('Tu sesión venció. Ingresa de nuevo.'); }
+  return j;
+}
+async function sha256(t) { const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t)); return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join(''); }
+
+async function cargar(silencioso) {
+  try {
+    const j = await api('datos');
+    if (!j.ok) throw new Error(j.error);
+    j._base = { servidor: fecha(j.ahora), local: Date.now() };
+    S.datos = j;
+    if (!silencioso || !document.activeElement || document.activeElement.tagName !== 'INPUT') render();
+  } catch (e) { if (!silencioso) { S.aviso = { t: 'err', m: e.message }; render(); } }
+}
+
+// ---------- búsqueda por código ----------
+function tokens(texto) {
+  const t = String(texto || '');
+  const out = new Set();
+  try { const j = JSON.parse(t); Object.values(j).forEach(v => out.add(limpiar(v))); } catch (e) {}
+  out.add(limpiar(t));
+  (t.match(/[A-Za-z0-9-]{6,}/g) || []).forEach(x => out.add(limpiar(x)));
+  return [...out].filter(x => x.length >= 6);
+}
+function coincide(tok, codigos) {
+  return codigos.some(c => c.length >= 6 && (c === tok || (tok.length >= 10 && (tok.includes(c) || c.includes(tok)))));
+}
+function buscar(texto) {
+  const toks = tokens(texto);
+  const D = S.datos;
+  const dev = D.devoluciones.find(d => toks.some(t => coincide(t, [limpiar(d.codigo_escaneado), limpiar(d.orden)])));
+  if (dev) return { dev };
+  const esp = D.esperadas.find(e => toks.some(t => coincide(t, String(e.codigos || '').split('|').concat([e.orden]).map(limpiar))));
+  return { esp };
+}
+
+// ---------- cámara ----------
+let lector = null, alEscanear = null;
+async function abrirCamara(cb) {
+  alEscanear = cb;
+  $('#cam').hidden = false;
+  try {
+    lector = new Html5Qrcode('lector', { experimentalFeatures: { useBarCodeDetectorIfSupported: true } });
+    await lector.start({ facingMode: 'environment' }, { fps: 10, qrbox: (w, h) => ({ width: Math.min(w * 0.9, 420), height: Math.min(h * 0.5, 220) }) },
+      txt => { cerrarCamara(); if (navigator.vibrate) navigator.vibrate(80); alEscanear && alEscanear(txt); }, () => {});
+  } catch (e) { cerrarCamara(); S.aviso = { t: 'err', m: 'No se pudo abrir la cámara: ' + (e.message || e) + '. Revisa los permisos del navegador.' }; render(); }
+}
+async function cerrarCamara() { $('#cam').hidden = true; if (lector) { try { await lector.stop(); } catch (e) {} lector = null; } }
+$('#camCerrar').onclick = cerrarCamara;
+
+function escaner(id, placeholder) {
+  return `<div class="scan"><input id="${id}" inputmode="text" autocomplete="off" placeholder="${placeholder}" aria-label="${placeholder}">
+    <button class="btn" data-cam="${id}" aria-label="Escanear con la cámara">📷</button></div>`;
+}
+function ligarEscaner(id, cb) {
+  const inp = document.getElementById(id);
+  if (!inp) return;
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter' && inp.value.trim()) { const v = inp.value.trim(); inp.value = ''; cb(v); } });
+  document.querySelector(`[data-cam="${id}"]`).onclick = () => abrirCamara(cb);
+  if (matchMedia('(pointer:fine)').matches) setTimeout(() => inp.focus(), 50); // en PC el lector USB escribe aquí
+}
+
+// ---------- vistas ----------
+function render() {
+  const app = $('#app');
+  if (!S.token) { app.innerHTML = vistaLogin(); ligarLogin(); return; }
+  if (!S.datos) { app.innerHTML = cabecera() + `<main><div class="vacio">Cargando…</div></main>`; cargar(); return; }
+  const v = { inicio: vistaInicio, recibir: vistaRecibir, pendientes: vistaPendientes, procesar: vistaProcesar, dts: vistaDts }[S.vista];
+  app.innerHTML = cabecera() + nav() + `<main>${S.aviso ? `<div class="msg ${S.aviso.t}" role="status">${esc(S.aviso.m)}</div>` : ''}${v()}</main>`;
+  ligarComun();
+  ({ inicio: ligarInicio, recibir: ligarRecibir, pendientes: ligarPendientes, procesar: ligarProcesar, dts: ligarDts }[S.vista])();
+}
+
+function cabecera() {
+  return `<header class="top"><img src="logo.png" alt="ET Brands"><div class="t">Recepción de Devoluciones</div>
+  ${S.usuario ? `<div class="u">${esc(S.usuario.nombre)}<br><a href="#" id="salir">Salir</a></div>` : ''}</header>`;
+}
+function nav() {
+  const D = S.datos;
+  const porProcesar = D.devoluciones.filter(abierta).length;
+  const items = [['inicio', '🏠', 'Inicio'], ['recibir', '📦', 'Recepción', D.esperadas.length], ['pendientes', '🕓', 'Por recibir'], ['procesar', '🔍', 'Procesar', porProcesar], ['dts', '📊', 'DTS']];
+  return `<nav class="tabs">${items.map(([k, ic, l, b]) => `<button data-v="${k}" ${S.vista === k ? 'aria-current="page"' : ''}><span class="ic">${ic}</span>${l}${k === 'procesar' && b ? `<span class="badge">${b}</span>` : ''}</button>`).join('')}</nav>`;
+}
+function ligarComun() {
+  document.querySelectorAll('nav.tabs button').forEach(b => b.onclick = () => ir(b.dataset.v));
+  const s = $('#salir'); if (s) s.onclick = e => { e.preventDefault(); salir(); };
+  document.querySelectorAll('[data-ir]').forEach(b => b.onclick = () => ir(b.dataset.ir));
+}
+function ir(v, extra = {}) { S.vista = v; S.aviso = null; S.sel = null; S.form = null; Object.assign(S, extra); render(); window.scrollTo(0, 0); }
+function salir() { S.token = null; S.usuario = null; S.datos = null; try { localStorage.removeItem('rd_sesion'); } catch (e) {} render(); }
+
+// login
+function vistaLogin() {
+  return `<div class="login"><img src="logo.png" alt="ET Brands"><h1 style="text-align:center">Recepción de Devoluciones</h1>
+  ${S.aviso ? `<div class="msg ${S.aviso.t}">${esc(S.aviso.m)}</div>` : ''}
+  <label class="f">Usuario<input id="lu" autocomplete="username"></label>
+  <label class="f">Clave<input id="lc" type="password" autocomplete="current-password"></label>
+  <button class="btn nar full" id="lb">Ingresar</button>
+  <p class="sub" style="text-align:center">Mismo usuario y clave de la app Devoluciones ET Brands.</p></div>`;
+}
+function ligarLogin() {
+  const go = async () => {
+    $('#lb').disabled = true;
+    try {
+      const j = await api('login', { usuario: $('#lu').value, hash: await sha256($('#lc').value) });
+      if (!j.ok) throw new Error(j.error);
+      S.token = j.token; S.usuario = j.usuario; S.aviso = null;
+      try { localStorage.setItem('rd_sesion', JSON.stringify({ token: j.token, usuario: j.usuario })); } catch (e) {}
+      render();
+    } catch (e) { S.aviso = { t: 'err', m: e.message }; render(); }
+  };
+  $('#lb').onclick = go; $('#lc').onkeydown = e => { if (e.key === 'Enter') go(); };
+}
+
+// inicio
+function vistaInicio() {
+  const D = S.datos;
+  const enEt = D.devoluciones.filter(abierta);
+  const vencidas = enEt.filter(d => semaforo(d) === 'err');
+  const urg = enEt.filter(d => semaforo(d) === 'warn');
+  const noId = D.devoluciones.filter(d => d.identificada === 'No' && abierta(d)).length;
+  const k = kpiDts(periodo('mes'));
+  const cola = enEt.slice().sort((a, b) => fecha(a.vence_sla) - fecha(b.vence_sla)).slice(0, 6);
+  const plazoHoy = D.esperadas.filter(e => venceHoy(e.plazo_mkp)).sort((a, b) => fecha(a.plazo_mkp) - fecha(b.plazo_mkp));
+  const sinEscanear = D.esperadas.filter(e => e.etapa === 'entregada');
+  const cierranHoy = enEt.filter(d => venceHoy(d.vence_sla));
+  const vencidasLista = enEt.filter(d => d.estado === 'Vencida sin procesar' || fecha(d.vence_sla) < ahoraChile());
+  const conRetraso = D.devoluciones.filter(d => d.estado === 'Procesada con retraso' && fecha(d.procesado_en) > new Date(ahoraChile() - 7 * 864e5));
+  const enCamino = D.esperadas.filter(e => e.etapa === 'en_camino').length;
+  const bloque = (titulo, ayuda, items, fn, tono) => `<div class="card"><div class="fila"><h2 class="esp">${titulo}</h2><span class="pill ${items.length ? tono : 'p-ok'}">${items.length}</span></div>
+    <p class="sub">${ayuda}</p>${items.length ? `<div class="lista">${items.slice(0, 8).map(fn).join('')}</div>${items.length > 8 ? `<p class="sub">y ${items.length - 8} más</p>` : ''}` : '<div class="vacio">Nada pendiente.</div>'}</div>`;
+  const foco = bloque('Plazo del marketplace vence hoy', 'Aceptar, apelar o revisar hoy en el portal. Las Full no llegan a la bodega: solo se gestionan.', plazoHoy, itemEsp, 'p-err')
+    + bloque('Entregadas y sin escanear', 'El marketplace dice que ya llegaron a la bodega. Búscalas y recíbelas.', sinEscanear, itemEsp, 'p-err')
+    + bloque('Vencidas sin procesar', 'Pasó el plazo de 1 día hábil y siguen sin procesar. Cuentan como incumplimiento del DTS.', vencidasLista, itemDev, 'p-err')
+    + bloque('En ET Brands: se cierran hoy', 'Recibidas que deben procesarse antes de que termine el día.', cierranHoy.filter(d => d.estado === 'En ET Brands'), itemDev, 'p-warn')
+    + bloque('Procesadas con retraso (últimos 7 días)', 'Se procesaron después del plazo.', conRetraso, itemDev, 'p-warn');
+  return `<div><h1>Hola, ${esc((S.usuario.nombre || '').split(' ')[0])}</h1><p class="sub">Actualizado ${corta(D.ahora)}</p></div>
+  <div class="tiles">
+    <button class="tile" data-ir="pendientes"><div class="n">${D.esperadas.length}</div><div class="l">Pendientes de recepción</div></button>
+    <button class="tile ${vencidas.length ? 'alert' : ''}" data-ir="procesar"><div class="n">${enEt.length}</div><div class="l">En ET Brands por procesar${vencidas.length ? ` · <b style="color:var(--err)">${vencidas.length} vencidas</b>` : urg.length ? ` · ${urg.length} por vencer` : ''}</div></button>
+    <button class="tile" data-ir="dts"><div class="n">${k.pct === null ? '—' : k.pct + '%'}</div><div class="l">DTS del mes</div></button>
+    ${noId ? `<button class="tile alert" data-ir="procesar"><div class="n">${noId}</div><div class="l">Recibidas sin identificar</div></button>` : ''}
+  </div>
+  <div class="fila"><button class="btn nar esp" data-ir="recibir">📦 Recibir devolución</button><button class="btn esp" data-ir="procesar">🔍 Procesar devolución</button></div>
+  <div><h2>Foco de hoy</h2><p class="sub">${enCamino} devoluciones más vienen en camino.</p></div>
+  ${foco}
+  <div class="card"><h2>Por procesar, próximas a vencer</h2>${cola.length ? `<div class="lista">${cola.map(itemDev).join('')}</div>` : '<div class="vacio">No hay devoluciones por procesar.</div>'}</div>`;
+}
+function ligarInicio() { document.querySelectorAll('[data-dev]').forEach(b => b.onclick = () => abrirProceso(b.dataset.dev)); ligarEsp(); }
+function ligarEsp() {
+  document.querySelectorAll('[data-esp]').forEach(b => b.onclick = () => {
+    const e = S.datos.esperadas.find(x => x.id === b.dataset.esp);
+    S.vista = 'recibir'; S.aviso = null; S.sel = { esp: e, codigo: String(e.codigos || '').split('|')[0] || e.orden }; render(); window.scrollTo(0, 0);
+  });
+}
+
+function itemDev(d) {
+  const s = semaforo(d);
+  const r = esProc(d) ? `${d.estado} ${corta(d.procesado_en)}` : (d.estado === 'Vencida sin procesar' ? 'Vencida sin procesar · ' : '') + restante(d.vence_sla).txt;
+  return `<div class="item s-${s}" data-dev="${esc(d.id)}" role="button" tabindex="0">
+    <div class="r1"><span class="prod">${esc(d.producto || 'Producto sin identificar')}</span><span class="pill p-${s}">${esc(r)}</span></div>
+    <div class="meta">${esc(d.marketplace || '—')} · ${esc(d.orden || d.codigo_escaneado)} · ${esc(d.sku || '')} · recibida ${corta(d.recibido_en)}</div></div>`;
+}
+function itemEsp(e) {
+  const dias = e.fecha_inicio ? Math.floor((ahoraChile() - fecha(e.fecha_inicio)) / 864e5) : null;
+  return `<div class="item" data-esp="${esc(e.id)}">
+    <div class="r1"><span class="prod">${esc(e.producto || e.sku || 'Sin detalle')}</span><span class="pill ${e.etapa === 'entregada' ? 'p-err' : e.tipo === 'no_entregada' ? 'p-gris' : 'p-nar'}">${esc(ETAPAS[e.etapa] || TIPOS[e.tipo] || '')}</span></div>
+    ${e.plazo_mkp ? `<div class="meta" style="color:${venceHoy(e.plazo_mkp) ? 'var(--err)' : 'var(--gris)'};font-weight:600">Plazo marketplace: ${corta(e.plazo_mkp)} · ${restante(e.plazo_mkp).txt}</div>` : ''}
+    ${e.estado_mkp ? `<div class="meta">${esc(e.estado_mkp)}</div>` : ''}
+    <div class="meta">${esc(e.marketplace)} · ${esc(TIPOS[e.tipo] || '')} · orden ${esc(e.orden)} · ${esc(e.sku)}${e.motivo ? ' · ' + esc(e.motivo) : ''}</div>
+    <div class="meta mono">${esc(String(e.codigos || '').split('|').join(' · '))}${dias !== null ? ` · hace ${dias} d` : ''}</div></div>`;
+}
+
+// recepción
+function vistaRecibir() {
+  const sel = S.sel;
+  let res = '';
+  if (sel && sel.dev) {
+    const d = sel.dev;
+    res = `<div class="msg warn">Esta devolución ya fue recibida el ${corta(d.recibido_en)} por ${esc(d.recibido_por)}. Estado: <b>${esc(d.estado)}</b>.</div>
+    ${abierta(d) ? `<button class="btn full" id="aProcesar">Procesarla ahora</button>` : ''}`;
+  } else if (sel && sel.esp) {
+    const e = sel.esp;
+    res = `<div class="card"><div class="r1 fila"><h2 class="esp">${esc(e.producto || e.sku)}</h2><span class="pill p-nar">${esc(TIPOS[e.tipo] || '')}</span></div>
+      <div class="kv"><span>Marketplace</span><b>${esc(e.marketplace)}</b><span>Orden</span><b class="mono">${esc(e.orden)}</b><span>SKU</span><b>${esc(e.sku)}</b>
+      <span>Cantidad</span><b>${esc(e.cantidad || 1)}</b><span>Motivo</span><b>${esc(e.motivo || '—')}</b><span>Código leído</span><b class="mono">${esc(sel.codigo)}</b></div>
+      <button class="btn nar full" id="confirmar">Confirmar recepción</button>
+      <p class="sub">Al confirmar queda "En ET Brands" y parte el plazo de 1 día hábil para procesarla.</p></div>`;
+  } else if (sel && sel.nada) {
+    res = `<div class="card"><div class="msg warn">"${esc(sel.codigo)}" no está en las devoluciones esperadas.</div>
+      <p class="sub">Si la etiqueta trae el número de orden (Ripley lo imprime arriba, ej. 25271009801-A), escríbelo en el escáner y presiona Enter. Si igual no aparece, recíbela como no identificada: se une sola cuando el marketplace la informe.</p>
+      <label class="f">Marketplace<select id="nMk"><option value="">Elegir…</option>${MARKETPLACES.map(m => `<option>${m}</option>`).join('')}</select></label>
+      <label class="f">Nº de orden (si se ve en la etiqueta)<input id="nOr" autocomplete="off"></label>
+      <label class="f">Producto o SKU (opcional)<input id="nPr" autocomplete="off"></label>
+      <button class="btn full" id="noIdent">Recibir como no identificada</button></div>`;
+  }
+  return `<div><h1>Recepción</h1><p class="sub">Escanea la etiqueta de la devolución (código de barras o QR). En PC usa el lector; en el celular toca 📷.</p></div>
+  ${escaner('scR', 'Escanear o escribir tracking / orden')}${res}`;
+}
+function ligarRecibir() {
+  ligarEscaner('scR', txt => {
+    const r = buscar(txt);
+    S.aviso = null;
+    S.sel = r.dev ? { dev: r.dev, codigo: txt } : r.esp ? { esp: r.esp, codigo: txt } : { nada: true, codigo: txt };
+    render();
+  });
+  const c = $('#confirmar');
+  if (c) c.onclick = () => recibir({ esperadaId: S.sel.esp.id, codigo: S.sel.codigo });
+  const n = $('#noIdent');
+  if (n) n.onclick = () => {
+    if (!$('#nMk').value) { alertaCampo('#nMk', 'Elige el marketplace'); return; }
+    const pr = $('#nPr').value.trim();
+    recibir({ codigo: S.sel.codigo, marketplace: $('#nMk').value, orden: $('#nOr').value.trim(), producto: pr, sku: /^[A-Z0-9-]+$/i.test(pr) ? pr.toUpperCase() : '' });
+  };
+  const p = $('#aProcesar'); if (p) p.onclick = () => abrirProceso(S.sel.dev.id);
+}
+function alertaCampo(sel, m) { const el = $(sel); el.style.borderColor = 'var(--err)'; el.focus(); if (!el.previousElementSibling || !el.previousElementSibling.classList.contains('msg')) el.insertAdjacentHTML('beforebegin', `<div class="msg err">${esc(m)}</div>`); }
+async function recibir(body) {
+  document.querySelectorAll('#confirmar,#noIdent').forEach(b => b.disabled = true);
+  try {
+    const j = await api('recibir', body);
+    if (!j.ok) throw new Error(j.error);
+    const d = j.devolucion;
+    await cargar(true);
+    S.sel = null;
+    S.aviso = { t: 'ok', m: `Recibida: ${d.producto || d.codigo_escaneado}. Estado "En ET Brands". Vence ${corta(d.vence_sla)}.` };
+    render();
+  } catch (e) { S.aviso = { t: 'err', m: e.message }; render(); }
+}
+
+// pendientes de recepción
+function vistaPendientes() {
+  const D = S.datos;
+  const q = limpiar(S.busqueda);
+  let l = D.esperadas.filter(e => (S.filtroMk === 'Todos' || e.marketplace === S.filtroMk) && (!S.filtroEt || e.etapa === S.filtroEt));
+  if (q) l = l.filter(e => limpiar(Object.values(e).join(' ')).includes(q));
+  const orden = e => (venceHoy(e.plazo_mkp) ? 0 : e.etapa === 'entregada' ? 1 : 2);
+  l.sort((a, b) => orden(a) - orden(b) || (a.fecha_inicio || '').localeCompare(b.fecha_inicio || ''));
+  const cuentaEt = k => D.esperadas.filter(e => e.etapa === k).length;
+  const cuenta = m => D.esperadas.filter(e => m === 'Todos' || e.marketplace === m).length;
+  return `<div><h1>Devoluciones pendientes de recepción</h1><p class="sub">Lo que los marketplaces informan que viene a la bodega. Arriba lo que tiene plazo hoy y lo que ya figura entregado.</p></div>
+  <div class="chips">${['Todos', ...MARKETPLACES].map(m => `<button class="chip" data-mk="${m}" aria-pressed="${S.filtroMk === m}">${m} (${cuenta(m)})</button>`).join('')}</div>
+  <div class="chips">${[['', 'Todas las etapas'], ['entregada', 'Entregadas sin escanear'], ['en_camino', 'En camino'], ['por_despachar', 'Por despachar']].map(([k, t]) => `<button class="chip" data-et="${k}" aria-pressed="${(S.filtroEt || '') === k}">${t}${k ? ` (${cuentaEt(k)})` : ''}</button>`).join('')}</div>
+  <label class="f">Buscar<input id="bq" value="${esc(S.busqueda)}" placeholder="Orden, SKU, producto o tracking"></label>
+  <div class="lista">${l.length ? l.map(itemEsp).join('') : '<div class="vacio">No hay devoluciones pendientes con este filtro.</div>'}</div>`;
+}
+function ligarPendientes() {
+  document.querySelectorAll('[data-mk]').forEach(b => b.onclick = () => { S.filtroMk = b.dataset.mk; render(); });
+  document.querySelectorAll('[data-et]').forEach(b => b.onclick = () => { S.filtroEt = b.dataset.et; render(); });
+  const q = $('#bq'); q.oninput = () => { S.busqueda = q.value; const pos = q.selectionStart; render(); const n = $('#bq'); n.focus(); n.setSelectionRange(pos, pos); };
+  ligarEsp();
+}
+
+// procesar
+function abrirProceso(id) {
+  S.vista = 'procesar'; S.aviso = null;
+  S.sel = { id };
+  const d = S.datos.devoluciones.find(x => x.id === id);
+  const sug = d && d.tipo === 'no_entregada' ? 'Sin acción' : '';
+  S.form = { corresponde: 'Si', condicion: '', clasificacion: '', accion: sug, fotos: [], comentario: '', sku: '' };
+  render(); window.scrollTo(0, 0);
+}
+function vistaProcesar() {
+  const D = S.datos;
+  if (S.sel && S.sel.id) return formProceso(D.devoluciones.find(x => x.id === S.sel.id));
+  const cola = D.devoluciones.filter(abierta).sort((a, b) => fecha(a.vence_sla) - fecha(b.vence_sla));
+  const hechas = D.devoluciones.filter(esProc).sort((a, b) => (b.procesado_en || '').localeCompare(a.procesado_en || '')).slice(0, 10);
+  return `<div><h1>Procesar devolución</h1><p class="sub">Escanea la etiqueta para ver qué producto se espera y registrar en qué estado llegó. Plazo: 1 día hábil desde la recepción.</p></div>
+  ${escaner('scP', 'Escanear etiqueta de la devolución')}
+  <div class="card"><h2>Por procesar (${cola.length})</h2>${cola.length ? `<div class="lista">${cola.map(itemDev).join('')}</div>` : '<div class="vacio">Todo al día.</div>'}</div>
+  ${hechas.length ? `<div class="card"><h2>Últimas procesadas</h2><div class="lista">${hechas.map(itemDev).join('')}</div></div>` : ''}`;
+}
+function formProceso(d) {
+  if (!d) return `<div class="msg err">No se encontró la devolución.</div><button class="btn" data-ir="procesar">Volver</button>`;
+  if (esProc(d)) {
+    return `<div class="card"><h2>${esc(d.producto || d.codigo_escaneado)}</h2><div class="msg ok">Procesada el ${corta(d.procesado_en)} por ${esc(d.procesado_por)} · ${esc(d.condicion)} · ${esc(d.accion_mkp)} · ${d.dentro_sla === 'Si' ? 'dentro de plazo' : 'con retraso'}</div>
+    ${linkPortal(d)}<button class="btn sec" id="volver">Volver</button></div>`;
+  }
+  const F = S.form, r = restante(d.vence_sla), s = semaforo(d);
+  const op = (grupo, lista) => lista.map(o => `<button class="opt" data-g="${grupo}" data-val="${esc(o.v || o)}" aria-pressed="${F[grupo] === (o.v || o)}">${esc(o.l || o.v || o)}${o.d ? `<small>${esc(o.d)}</small>` : ''}</button>`).join('');
+  const fotoObligatoria = F.condicion && F.condicion !== 'Sin fallas';
+  return `<button class="btn sec" id="volver" style="justify-self:start">← Volver</button>
+  <div class="card">
+    <div class="fila"><h2 class="esp">${esc(d.producto || 'Producto sin identificar')}</h2><span class="pill p-${s}">${esc(r.txt)}</span></div>
+    <div class="kv"><span>Producto esperado</span><b>${esc(d.producto || '—')}</b><span>SKU</span><b>${esc(d.sku || '—')}</b><span>Cantidad</span><b>${esc(d.cantidad || 1)}</b>
+    <span>Marketplace</span><b>${esc(d.marketplace || '—')}</b><span>Orden</span><b class="mono">${esc(d.orden || '—')}</b><span>Tipo</span><b>${esc(TIPOS[d.tipo] || '—')}</b>
+    <span>Motivo del cliente</span><b>${esc(d.motivo || '—')}</b><span>Recibida</span><b>${corta(d.recibido_en)} · ${esc(d.recibido_por)}</b><span>Vence</span><b>${corta(d.vence_sla)}</b></div>
+  </div>
+  ${d.identificada === 'No' ? `<label class="f">SKU del producto recibido<input id="fSku" value="${esc(F.sku)}" placeholder="Ej. HOWELL002"></label>` : ''}
+  <div class="card"><h2>¿El producto que llegó es el esperado?</h2><div class="opts">${op('corresponde', [{ v: 'Si', l: 'Sí', d: 'Mismo producto y cantidad' }, { v: 'No', d: 'Llegó otro producto o cantidad' }])}</div></div>
+  <div class="card"><h2>¿En qué estado viene?</h2><div class="opts">${op('condicion', CONDICIONES)}</div></div>
+  <div class="card"><h2>Clasificación</h2><div class="opts">${op('clasificacion', CLASIFICACIONES)}</div></div>
+  <div class="card"><h2>Acción en el marketplace</h2><div class="opts">${op('accion', ACCIONES)}</div></div>
+  <div class="card"><h2>Fotos ${fotoObligatoria ? '<span class="pill p-err">obligatorias</span>' : '<span class="pill p-gris">opcional</span>'}</h2>
+    <p class="sub">Son la evidencia para apelar o reclamar. Etiqueta, empaque y el daño.</p>
+    <div class="fotos">${F.fotos.map(f => `<img src="${f}" alt="foto">`).join('')}</div>
+    <label class="btn sec" style="text-align:center">📷 Agregar fotos<input type="file" id="fFotos" accept="image/*" capture="environment" multiple hidden></label></div>
+  <label class="f">Comentario<textarea id="fCom" rows="2">${esc(F.comentario)}</textarea></label>
+  <button class="btn nar full" id="guardar">Guardar y cerrar procesamiento</button>`;
+}
+function linkPortal(d) {
+  const url = d.link || PORTALES[d.marketplace];
+  return url && d.accion_mkp !== 'Sin acción' ? `<a class="btn full" style="text-align:center;text-decoration:none" href="${esc(url)}" target="_blank" rel="noopener">Ir a ${esc(d.marketplace)} a ${esc((d.accion_mkp || 'gestionar').toLowerCase())} →</a>
+    <p class="sub">Revisamos una vez al día en el portal que la gestión esté hecha. Si no, cuenta como incumplimiento en el DTS.</p>` : '';
+}
+function ligarProcesar() {
+  if (!S.sel) {
+    ligarEscaner('scP', txt => {
+      const r = buscar(txt);
+      if (r.dev) return abrirProceso(r.dev.id);
+      if (r.esp) { S.vista = 'recibir'; S.sel = { esp: r.esp, codigo: txt }; S.aviso = { t: 'warn', m: 'Esta devolución todavía no se ha recibido. Confírmala primero.' }; }
+      else S.aviso = { t: 'warn', m: `"${txt}" no corresponde a ninguna devolución recibida.` };
+      render();
+    });
+    document.querySelectorAll('[data-dev]').forEach(b => b.onclick = () => abrirProceso(b.dataset.dev));
+    return;
+  }
+  const v = $('#volver'); if (v) v.onclick = () => ir('procesar');
+  const F = S.form; if (!F) return;
+  document.querySelectorAll('.opt').forEach(b => b.onclick = () => {
+    guardarCampos();
+    F[b.dataset.g] = b.dataset.val;
+    if (b.dataset.g === 'condicion') {
+      const c = CONDICIONES.find(x => x.v === b.dataset.val);
+      F.clasificacion = c.cl;
+      const d = S.datos.devoluciones.find(x => x.id === S.sel.id);
+      if (d.tipo === 'no_entregada') F.accion = c.v === 'Sin fallas' ? 'Sin acción' : 'Reclamar';
+      else F.accion = c.v === 'Sin fallas' ? 'Aceptar' : (d.marketplace === 'Mercado Libre' ? 'Reclamar' : 'Apelar');
+    }
+    render();
+  });
+  $('#fFotos').onchange = async e => {
+    guardarCampos();
+    for (const f of e.target.files) F.fotos.push(await comprimir(f));
+    render();
+  };
+  $('#guardar').onclick = async () => {
+    guardarCampos();
+    const d = S.datos.devoluciones.find(x => x.id === S.sel.id);
+    const falta = !F.condicion ? 'Elige en qué estado viene' : !F.clasificacion ? 'Elige la clasificación' : !F.accion ? 'Elige la acción en el marketplace'
+      : (F.condicion !== 'Sin fallas' && !F.fotos.length) ? 'Agrega al menos una foto: sin evidencia no se puede apelar ni reclamar'
+      : (d.identificada === 'No' && !F.sku && !d.sku) ? 'Escribe el SKU del producto recibido' : '';
+    if (falta) { S.aviso = { t: 'err', m: falta }; render(); return; }
+    $('#guardar').disabled = true; $('#guardar').textContent = 'Guardando…';
+    try {
+      const j = await api('procesar', { id: d.id, corresponde: F.corresponde, condicion: F.condicion, clasificacion: F.clasificacion, accion: F.accion, comentario: F.comentario, fotos: F.fotos, sku: F.sku });
+      if (!j.ok) throw new Error(j.error);
+      await cargar(true);
+      S.form = null; S.sel = { id: d.id };
+      S.aviso = { t: 'ok', m: `Procesada ${j.devolucion.dentro_sla === 'Si' ? 'dentro de plazo' : 'con retraso'}.${j.devolucion.accion_mkp !== 'Sin acción' ? ' Falta gestionarla en el marketplace.' : ''}` };
+      render();
+    } catch (e) { S.aviso = { t: 'err', m: e.message }; render(); }
+  };
+}
+function guardarCampos() { const F = S.form; if (!F) return; const c = $('#fCom'); if (c) F.comentario = c.value; const s = $('#fSku'); if (s) F.sku = s.value.trim().toUpperCase(); }
+function comprimir(file) {
+  return new Promise((ok, mal) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => { const k = Math.min(1, 1280 / Math.max(img.width, img.height)); const c = document.createElement('canvas'); c.width = img.width * k; c.height = img.height * k; c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url); ok(c.toDataURL('image/jpeg', 0.72)); };
+    img.onerror = mal; img.src = url;
+  });
+}
+
+// DTS
+function periodo(p) {
+  const h = ahoraChile(); const y = h.getFullYear(), m = h.getMonth();
+  if (p === 'semana') { const d = new Date(h); const dow = (d.getDay() + 6) % 7; d.setDate(d.getDate() - dow); d.setHours(0, 0, 0, 0); return [d, h]; }
+  if (p === 'mesAnt') return [new Date(y, m - 1, 1), new Date(y, m, 1)];
+  if (p === '30') return [new Date(h.getTime() - 30 * 864e5), h];
+  return [new Date(y, m, 1), h];
+}
+function kpiDts([desde, hasta]) {
+  const ahora = ahoraChile();
+  // El DTS cuenta desde el inicio de la app nueva y no incluye lo registrado en la app anterior.
+  const inicio = fecha((S.datos.inicioDts || '2026-10-26') + ' 00:00:00');
+  const l = S.datos.devoluciones.filter(d => { const r = fecha(d.recibido_en); return r && r >= desde && r < hasta && r >= inicio && d.origen !== 'App anterior'; });
+  // Entran al indicador las ya procesadas y las que vencieron sin procesar; las que siguen en plazo aún no cuentan.
+  const evaluables = l.filter(d => esProc(d) || fecha(d.vence_sla) < ahora);
+  const fueraSla = evaluables.filter(d => !esProc(d) || d.dentro_sla !== 'Si');
+  const noGest = evaluables.filter(d => d.verif_mkp === 'No gestionada');
+  const cumple = evaluables.filter(d => esProc(d) && d.dentro_sla === 'Si' && d.verif_mkp !== 'No gestionada');
+  const horas = evaluables.filter(d => d.horas_proceso).map(d => +d.horas_proceso);
+  return {
+    recibidas: l.length, evaluables: evaluables.length, cumple: cumple.length, fueraSla, noGest,
+    vencidasAbiertas: evaluables.filter(d => !esProc(d)).length,
+    verifPend: l.filter(d => esProc(d) && (d.verif_mkp || 'Pendiente') === 'Pendiente').length,
+    pct: evaluables.length ? Math.round(cumple.length / evaluables.length * 100) : null,
+    horasProm: horas.length ? Math.round(horas.reduce((a, b) => a + b, 0) / horas.length * 10) / 10 : null
+  };
+}
+function vistaDts() {
+  const k = kpiDts(periodo(S.periodo));
+  const malas = [...new Set([...k.fueraSla, ...k.noGest])];
+  const color = k.pct === null ? 'var(--gris)' : k.pct >= 95 ? 'var(--ok)' : k.pct >= 85 ? 'var(--warn)' : 'var(--err)';
+  return `<div><h1>Indicador DTS de devoluciones</h1><p class="sub">Cumple la devolución procesada dentro de 1 día hábil desde su recepción y gestionada en el marketplace (verificación diaria en el portal). Cuenta desde el ${corta((S.datos.inicioDts || '2026-10-26') + ' 00:00:00').split(',')[0]}; lo registrado en la app anterior no se considera.</p></div>
+  <div class="chips">${[['semana', 'Esta semana'], ['mes', 'Este mes'], ['mesAnt', 'Mes anterior'], ['30', 'Últimos 30 días']].map(([v, l]) => `<button class="chip" data-p="${v}" aria-pressed="${S.periodo === v}">${l}</button>`).join('')}</div>
+  <div class="card"><div class="fila"><div class="esp"><div class="big" style="color:${color}">${k.pct === null ? '—' : k.pct + '%'}</div><div class="sub">${k.cumple} de ${k.evaluables} devoluciones cumplen</div></div>
+    <div class="kv"><span>Recibidas</span><b>${k.recibidas}</b><span>Fuera de plazo</span><b>${k.fueraSla.length}</b><span>Vencidas sin procesar</span><b>${k.vencidasAbiertas}</b>
+    <span>No gestionadas en marketplace</span><b>${k.noGest.length}</b><span>Verificación pendiente</span><b>${k.verifPend}</b><span>Horas hábiles promedio</span><b>${k.horasProm ?? '—'}</b></div></div></div>
+  <div class="card"><h2>Incumplimientos (${malas.length})</h2>${malas.length ? `<div class="tbl"><table><thead><tr><th>Recibida</th><th>Producto</th><th>Marketplace</th><th>Orden</th><th>Motivo del incumplimiento</th></tr></thead><tbody>
+    ${malas.map(d => `<tr><td class="mono">${corta(d.recibido_en)}</td><td>${esc(d.producto || d.codigo_escaneado)}</td><td>${esc(d.marketplace)}</td><td class="mono">${esc(d.orden)}</td>
+    <td>${[!esProc(d) ? 'Vencida sin procesar' : d.dentro_sla !== 'Si' ? `Procesada con retraso (${esc(d.horas_proceso)} h)` : '', d.verif_mkp === 'No gestionada' ? 'No gestionada en marketplace' + (d.verif_detalle ? ': ' + esc(d.verif_detalle) : '') : ''].filter(Boolean).join(' · ')}</td></tr>`).join('')}
+  </tbody></table></div>` : '<div class="vacio">Sin incumplimientos en el período.</div>'}</div>`;
+}
+function ligarDts() { document.querySelectorAll('[data-p]').forEach(b => b.onclick = () => { S.periodo = b.dataset.p; render(); }); }
+
+// arranque
+render();
+setInterval(() => { if (S.token && !lector && S.vista !== 'procesar') cargar(true); }, 120000);
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>
