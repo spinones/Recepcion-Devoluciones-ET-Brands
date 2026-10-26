@@ -119,6 +119,9 @@ const PORTALES = {
 };
 const MARKETPLACES = Object.keys(PORTALES);
 const TIPOS = { comprador: 'Devolución del cliente', no_entregada: 'No entregada' };
+const ETAPAS = { entregada: 'Entregada en bodega', en_camino: 'En camino', por_despachar: 'Por despachar' };
+const finDeHoy = () => { const d = ahoraChile(); d.setHours(23, 59, 59, 999); return d; };
+const venceHoy = s => s && fecha(s) <= finDeHoy();
 
 const CONDICIONES = [
   { v: 'Sin fallas', d: 'Llega como se envió', cl: 'Reintegrable' },
@@ -285,6 +288,15 @@ function vistaInicio() {
   const noId = D.devoluciones.filter(d => d.identificada === 'No' && d.estado === 'En ET Brands').length;
   const k = kpiDts(periodo('mes'));
   const cola = enEt.slice().sort((a, b) => fecha(a.vence_sla) - fecha(b.vence_sla)).slice(0, 6);
+  const plazoHoy = D.esperadas.filter(e => venceHoy(e.plazo_mkp)).sort((a, b) => fecha(a.plazo_mkp) - fecha(b.plazo_mkp));
+  const sinEscanear = D.esperadas.filter(e => e.etapa === 'entregada');
+  const cierranHoy = enEt.filter(d => venceHoy(d.vence_sla));
+  const enCamino = D.esperadas.filter(e => e.etapa === 'en_camino').length;
+  const bloque = (titulo, ayuda, items, fn, tono) => `<div class="card"><div class="fila"><h2 class="esp">${titulo}</h2><span class="pill ${items.length ? tono : 'p-ok'}">${items.length}</span></div>
+    <p class="sub">${ayuda}</p>${items.length ? `<div class="lista">${items.slice(0, 8).map(fn).join('')}</div>${items.length > 8 ? `<p class="sub">y ${items.length - 8} más</p>` : ''}` : '<div class="vacio">Nada pendiente.</div>'}</div>`;
+  const foco = bloque('Plazo del marketplace vence hoy', 'Hay que gestionarlas hoy en el portal, hayan llegado o no.', plazoHoy, itemEsp, 'p-err')
+    + bloque('Entregadas y sin escanear', 'El marketplace dice que ya llegaron a la bodega. Búscalas y recíbelas.', sinEscanear, itemEsp, 'p-err')
+    + bloque('En ET Brands: se cierran hoy', 'Recibidas que deben procesarse antes de que termine el día.', cierranHoy, itemDev, 'p-warn');
   return `<div><h1>Hola, ${esc((S.usuario.nombre || '').split(' ')[0])}</h1><p class="sub">Actualizado ${corta(D.ahora)}</p></div>
   <div class="tiles">
     <button class="tile" data-ir="pendientes"><div class="n">${D.esperadas.length}</div><div class="l">Pendientes de recepción</div></button>
@@ -293,9 +305,17 @@ function vistaInicio() {
     ${noId ? `<button class="tile alert" data-ir="procesar"><div class="n">${noId}</div><div class="l">Recibidas sin identificar</div></button>` : ''}
   </div>
   <div class="fila"><button class="btn nar esp" data-ir="recibir">📦 Recibir devolución</button><button class="btn esp" data-ir="procesar">🔍 Procesar devolución</button></div>
-  <div class="card"><h2>Próximas a vencer</h2>${cola.length ? `<div class="lista">${cola.map(itemDev).join('')}</div>` : '<div class="vacio">No hay devoluciones por procesar.</div>'}</div>`;
+  <div><h2>Foco de hoy</h2><p class="sub">${enCamino} devoluciones más vienen en camino.</p></div>
+  ${foco}
+  <div class="card"><h2>Por procesar, próximas a vencer</h2>${cola.length ? `<div class="lista">${cola.map(itemDev).join('')}</div>` : '<div class="vacio">No hay devoluciones por procesar.</div>'}</div>`;
 }
-function ligarInicio() { document.querySelectorAll('[data-dev]').forEach(b => b.onclick = () => abrirProceso(b.dataset.dev)); }
+function ligarInicio() { document.querySelectorAll('[data-dev]').forEach(b => b.onclick = () => abrirProceso(b.dataset.dev)); ligarEsp(); }
+function ligarEsp() {
+  document.querySelectorAll('[data-esp]').forEach(b => b.onclick = () => {
+    const e = S.datos.esperadas.find(x => x.id === b.dataset.esp);
+    S.vista = 'recibir'; S.aviso = null; S.sel = { esp: e, codigo: String(e.codigos || '').split('|')[0] || e.orden }; render(); window.scrollTo(0, 0);
+  });
+}
 
 function itemDev(d) {
   const s = semaforo(d);
@@ -307,8 +327,9 @@ function itemDev(d) {
 function itemEsp(e) {
   const dias = e.fecha_inicio ? Math.floor((ahoraChile() - fecha(e.fecha_inicio)) / 864e5) : null;
   return `<div class="item" data-esp="${esc(e.id)}">
-    <div class="r1"><span class="prod">${esc(e.producto || e.sku || 'Sin detalle')}</span><span class="pill ${e.tipo === 'no_entregada' ? 'p-gris' : 'p-nar'}">${esc(TIPOS[e.tipo] || e.tipo || '')}</span></div>
-    <div class="meta">${esc(e.marketplace)} · orden ${esc(e.orden)} · ${esc(e.sku)}${e.motivo ? ' · ' + esc(e.motivo) : ''}</div>
+    <div class="r1"><span class="prod">${esc(e.producto || e.sku || 'Sin detalle')}</span><span class="pill ${e.etapa === 'entregada' ? 'p-err' : e.tipo === 'no_entregada' ? 'p-gris' : 'p-nar'}">${esc(ETAPAS[e.etapa] || TIPOS[e.tipo] || '')}</span></div>
+    ${e.plazo_mkp ? `<div class="meta" style="color:${venceHoy(e.plazo_mkp) ? 'var(--err)' : 'var(--gris)'};font-weight:600">Plazo marketplace: ${corta(e.plazo_mkp)}</div>` : ''}
+    <div class="meta">${esc(e.marketplace)} · ${esc(TIPOS[e.tipo] || '')} · orden ${esc(e.orden)} · ${esc(e.sku)}${e.motivo ? ' · ' + esc(e.motivo) : ''}</div>
     <div class="meta mono">${esc(String(e.codigos || '').split('|').join(' · '))}${dias !== null ? ` · hace ${dias} d` : ''}</div></div>`;
 }
 
@@ -373,22 +394,23 @@ async function recibir(body) {
 function vistaPendientes() {
   const D = S.datos;
   const q = limpiar(S.busqueda);
-  let l = D.esperadas.filter(e => S.filtroMk === 'Todos' || e.marketplace === S.filtroMk);
+  let l = D.esperadas.filter(e => (S.filtroMk === 'Todos' || e.marketplace === S.filtroMk) && (!S.filtroEt || e.etapa === S.filtroEt));
   if (q) l = l.filter(e => limpiar(Object.values(e).join(' ')).includes(q));
-  l.sort((a, b) => (a.fecha_inicio || '').localeCompare(b.fecha_inicio || ''));
+  const orden = e => (venceHoy(e.plazo_mkp) ? 0 : e.etapa === 'entregada' ? 1 : 2);
+  l.sort((a, b) => orden(a) - orden(b) || (a.fecha_inicio || '').localeCompare(b.fecha_inicio || ''));
+  const cuentaEt = k => D.esperadas.filter(e => e.etapa === k).length;
   const cuenta = m => D.esperadas.filter(e => m === 'Todos' || e.marketplace === m).length;
-  return `<div><h1>Devoluciones pendientes de recepción</h1><p class="sub">Lo que los marketplaces informan que viene en camino a la bodega. Las más antiguas arriba.</p></div>
+  return `<div><h1>Devoluciones pendientes de recepción</h1><p class="sub">Lo que los marketplaces informan que viene a la bodega. Arriba lo que tiene plazo hoy y lo que ya figura entregado.</p></div>
   <div class="chips">${['Todos', ...MARKETPLACES].map(m => `<button class="chip" data-mk="${m}" aria-pressed="${S.filtroMk === m}">${m} (${cuenta(m)})</button>`).join('')}</div>
+  <div class="chips">${[['', 'Todas las etapas'], ['entregada', 'Entregadas sin escanear'], ['en_camino', 'En camino'], ['por_despachar', 'Por despachar']].map(([k, t]) => `<button class="chip" data-et="${k}" aria-pressed="${(S.filtroEt || '') === k}">${t}${k ? ` (${cuentaEt(k)})` : ''}</button>`).join('')}</div>
   <label class="f">Buscar<input id="bq" value="${esc(S.busqueda)}" placeholder="Orden, SKU, producto o tracking"></label>
   <div class="lista">${l.length ? l.map(itemEsp).join('') : '<div class="vacio">No hay devoluciones pendientes con este filtro.</div>'}</div>`;
 }
 function ligarPendientes() {
   document.querySelectorAll('[data-mk]').forEach(b => b.onclick = () => { S.filtroMk = b.dataset.mk; render(); });
+  document.querySelectorAll('[data-et]').forEach(b => b.onclick = () => { S.filtroEt = b.dataset.et; render(); });
   const q = $('#bq'); q.oninput = () => { S.busqueda = q.value; const pos = q.selectionStart; render(); const n = $('#bq'); n.focus(); n.setSelectionRange(pos, pos); };
-  document.querySelectorAll('[data-esp]').forEach(b => b.onclick = () => {
-    const e = S.datos.esperadas.find(x => x.id === b.dataset.esp);
-    S.vista = 'recibir'; S.aviso = null; S.sel = { esp: e, codigo: String(e.codigos || '').split('|')[0] || e.orden }; render(); window.scrollTo(0, 0);
-  });
+  ligarEsp();
 }
 
 // procesar
