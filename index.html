@@ -107,6 +107,7 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 // ====== CONFIGURACIÓN: pega aquí la URL /exec del Apps Script publicado ======
+const VERSION = '2026.10.26-7';
 const API_URL = 'https://script.google.com/macros/s/AKfycbxYHuQd_UwrjCn3LQ0Y_q35DRnTWrO-Yx3UI8MLodUQFWnZaXGCi_zgbD1rwylW-f7k/exec';
 // ============================================================================
 
@@ -197,7 +198,19 @@ function porEan(texto) {
   return k.length >= 7 && S.catalogo[k] ? S.catalogo[k] : null;
 }
 
+async function revisarVersion() {
+  try {
+    const v = (await (await fetch('version.txt?t=' + Date.now(), { cache: 'no-store' })).text()).trim();
+    if (v && v !== VERSION) {
+      const ocupado = (S.form && (S.form.condicion || S.form.fotos.length)) || (S.sel && (S.sel.esp || S.sel.buscando));
+      if (!ocupado) location.reload();
+      else S.aviso = { t: 'warn', m: 'Hay una versión nueva de la app. Termina lo que estás haciendo y toca ⟳ Actualizar.' };
+    }
+  } catch (e) { /* sin conexión */ }
+}
+
 async function cargar(silencioso) {
+  revisarVersion();
   try {
     const j = await api('datos');
     if (!j.ok) throw new Error(j.error);
@@ -283,6 +296,7 @@ function render() {
 
 function cabecera() {
   return `<header class="top"><img src="logo.png" alt="ET Brands"><div class="t">Recepción de Devoluciones</div>
+  <span style="font-size:.65rem;color:#9a958b">v${VERSION}</span>
   ${S.usuario ? `<button class="btn sec" id="refrescar" style="padding:7px 11px;font-size:.85rem" aria-label="Actualizar datos">⟳ Actualizar</button>
   <div class="u">${esc(S.usuario.nombre)}<br><a href="#" id="salir">Salir</a></div>` : ''}</header>`;
 }
@@ -295,7 +309,11 @@ function nav() {
 function ligarComun() {
   document.querySelectorAll('nav.tabs button').forEach(b => b.onclick = () => ir(b.dataset.v));
   const s = $('#salir'); if (s) s.onclick = e => { e.preventDefault(); salir(); };
-  const rf = $('#refrescar'); if (rf) rf.onclick = async () => { rf.disabled = true; rf.textContent = '⟳ …'; await cargar(true); render(); };
+  const rf = $('#refrescar'); if (rf) rf.onclick = async () => {
+    rf.disabled = true; rf.textContent = '⟳ …';
+    try { const v = (await (await fetch('version.txt?t=' + Date.now(), { cache: 'no-store' })).text()).trim(); if (v && v !== VERSION) return location.reload(); } catch (e) {}
+    await cargar(true); render();
+  };
   document.querySelectorAll('[data-ir]').forEach(b => b.onclick = () => ir(b.dataset.ir));
 }
 function ir(v, extra = {}) { S.vista = v; S.aviso = null; S.sel = null; S.form = null; S.filtroProd = null; Object.assign(S, extra); render(); window.scrollTo(0, 0); }
