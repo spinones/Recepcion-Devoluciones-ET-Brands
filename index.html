@@ -16,7 +16,7 @@
     --ok:#1d8a5f; --ok-bg:#e3f4ec; --warn:#a96a00; --warn-bg:#fdf1d8; --err:#c0392b; --err-bg:#fbe6e3;
   }
   *{box-sizing:border-box}
-  html,body{margin:0;background:var(--fondo);color:var(--texto);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  html,body{overscroll-behavior-y:none;margin:0;background:var(--fondo);color:var(--texto);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
   body{padding-bottom:calc(72px + env(safe-area-inset-bottom,0px))}
   button,input,select,textarea{font:inherit}
   header.top{position:sticky;top:0;z-index:5;background:var(--negro);color:#fff;padding:calc(10px + env(safe-area-inset-top,0px)) 16px 10px;display:flex;align-items:center;gap:12px}
@@ -233,17 +233,28 @@ function buscar(texto) {
 }
 
 // ---------- cámara ----------
-let lector = null, alEscanear = null;
+let lector = null, alEscanear = null, leyendo = false, camAbierta = false;
 async function abrirCamara(cb) {
-  alEscanear = cb;
+  if (camAbierta) return;
+  alEscanear = cb; leyendo = false; camAbierta = true;
   $('#cam').hidden = false;
   try {
-    lector = new Html5Qrcode('lector', { experimentalFeatures: { useBarCodeDetectorIfSupported: true } });
+    if (!lector) lector = new Html5Qrcode('lector', { experimentalFeatures: { useBarCodeDetectorIfSupported: true } });
     await lector.start({ facingMode: 'environment' }, { fps: 10, qrbox: (w, h) => ({ width: Math.min(w * 0.9, 420), height: Math.min(h * 0.5, 220) }) },
-      txt => { cerrarCamara(); if (navigator.vibrate) navigator.vibrate(80); alEscanear && alEscanear(txt); }, () => {});
-  } catch (e) { cerrarCamara(); S.aviso = { t: 'err', m: 'No se pudo abrir la cámara: ' + (e.message || e) + '. Revisa los permisos del navegador.' }; render(); }
+      async txt => {
+        if (leyendo) return;              // ignora lecturas repetidas mientras se cierra
+        leyendo = true;
+        if (navigator.vibrate) navigator.vibrate(80);
+        await cerrarCamara();
+        alEscanear && alEscanear(txt);
+      }, () => {});
+  } catch (e) { await cerrarCamara(); S.aviso = { t: 'err', m: 'No se pudo abrir la cámara: ' + (e.message || e) + '. Revisa los permisos del navegador.' }; render(); }
 }
-async function cerrarCamara() { $('#cam').hidden = true; if (lector) { try { await lector.stop(); } catch (e) {} lector = null; } }
+async function cerrarCamara() {
+  $('#cam').hidden = true;
+  if (lector) { try { if (lector.isScanning) await lector.stop(); } catch (e) {} }
+  camAbierta = false;
+}
 $('#camCerrar').onclick = cerrarCamara;
 
 function escaner(id, placeholder) {
@@ -253,8 +264,9 @@ function escaner(id, placeholder) {
 function ligarEscaner(id, cb) {
   const inp = document.getElementById(id);
   if (!inp) return;
-  inp.addEventListener('keydown', e => { if (e.key === 'Enter' && inp.value.trim()) { const v = inp.value.trim(); inp.value = ''; cb(v); } });
-  document.querySelector(`[data-cam="${id}"]`).onclick = () => abrirCamara(cb);
+  const limpio = t => { try { const j = JSON.parse(t); if (j && j.id) return String(j.id); } catch (e) {} return String(t).trim(); };
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter' && inp.value.trim()) { const v = limpio(inp.value); inp.value = ''; cb(v); } });
+  document.querySelector(`[data-cam="${id}"]`).onclick = () => abrirCamara(t => cb(limpio(t)));
   if (matchMedia('(pointer:fine)').matches) setTimeout(() => inp.focus(), 50); // en PC el lector USB escribe aquí
 }
 
@@ -271,7 +283,8 @@ function render() {
 
 function cabecera() {
   return `<header class="top"><img src="logo.png" alt="ET Brands"><div class="t">Recepción de Devoluciones</div>
-  ${S.usuario ? `<div class="u">${esc(S.usuario.nombre)}<br><a href="#" id="salir">Salir</a></div>` : ''}</header>`;
+  ${S.usuario ? `<button class="btn sec" id="refrescar" style="padding:7px 11px;font-size:.85rem" aria-label="Actualizar datos">⟳ Actualizar</button>
+  <div class="u">${esc(S.usuario.nombre)}<br><a href="#" id="salir">Salir</a></div>` : ''}</header>`;
 }
 function nav() {
   const D = S.datos;
@@ -282,6 +295,7 @@ function nav() {
 function ligarComun() {
   document.querySelectorAll('nav.tabs button').forEach(b => b.onclick = () => ir(b.dataset.v));
   const s = $('#salir'); if (s) s.onclick = e => { e.preventDefault(); salir(); };
+  const rf = $('#refrescar'); if (rf) rf.onclick = async () => { rf.disabled = true; rf.textContent = '⟳ …'; await cargar(true); render(); };
   document.querySelectorAll('[data-ir]').forEach(b => b.onclick = () => ir(b.dataset.ir));
 }
 function ir(v, extra = {}) { S.vista = v; S.aviso = null; S.sel = null; S.form = null; S.filtroProd = null; Object.assign(S, extra); render(); window.scrollTo(0, 0); }
@@ -398,6 +412,7 @@ function vistaRecibir() {
     res = sel.buscando ? `<div class="card"><div class="msg warn">Buscando "${esc(sel.codigo)}" en los marketplaces…</div></div>` : `<div class="card"><div class="msg warn">"${esc(sel.codigo)}" no está en las devoluciones esperadas ni en los marketplaces.</div>
       <p class="sub"><b>Escanea otra etiqueta del mismo paquete.</b> Las de 99minutos u otros couriers suelen traer debajo la etiqueta original de Mercado Libre o del marketplace. También sirve escribir el número de venta u orden (Ripley lo imprime arriba, ej. 25271009801-A). La app guarda ambos códigos.</p>
       <p class="sub">Si ninguna etiqueta aparece, recíbela como no identificada: se une sola cuando el marketplace la informe.</p>
+      <button class="btn sec" id="otroPaquete">Es otro paquete: empezar de nuevo</button>
       <label class="f">Marketplace<select id="nMk"><option value="">Elegir…</option>${MARKETPLACES.map(m => `<option>${m}</option>`).join('')}</select></label>
       <label class="f">Nº de orden (si se ve en la etiqueta)<input id="nOr" autocomplete="off"></label>
       <label class="f">Producto o SKU (opcional)<input id="nPr" autocomplete="off"></label>
@@ -410,10 +425,11 @@ function ligarRecibir() {
   ligarEscaner('scR', txt => {
     const r = buscar(txt);
     // Si la etiqueta anterior no se reconoció, esta segunda identifica el paquete y se guardan ambos códigos.
-    const previo = S.sel && S.sel.nada ? S.sel.codigo : '';
+    if (S.sel && S.sel.buscando) return;
+    const previo = S.sel && S.sel.nada && Date.now() - (S.sel.t || 0) < 90000 ? S.sel.codigo : '';
     const cod = previo && (r.dev || r.esp) ? previo + ' ' + txt : txt;
     S.aviso = null;
-    S.sel = r.dev ? { dev: r.dev, codigo: cod } : r.esp ? { esp: r.esp, codigo: cod } : r.prod ? { prod: r.prod } : { nada: true, codigo: previo ? previo + ' ' + txt : txt };
+    S.sel = r.dev ? { dev: r.dev, codigo: cod } : r.esp ? { esp: r.esp, codigo: cod } : r.prod ? { prod: r.prod } : { nada: true, codigo: previo ? previo + ' ' + txt : txt, t: Date.now() };
     if (S.sel.nada) return buscarEnLinea(S.sel.codigo);
     render();
   });
@@ -431,13 +447,14 @@ function ligarRecibir() {
     const e = S.datos.esperadas.find(x => x.id === b.dataset.espean);
     S.sel = { esp: e, codigo: '' }; render(); window.scrollTo(0, 0);
   });
+  const op = $('#otroPaquete'); if (op) op.onclick = () => { S.sel = null; S.aviso = null; render(); };
   const np = $('#noIdentProd');
   if (np) np.onclick = () => recibir({ codigo: '', marketplace: '', sku: S.sel.prod.skus[0], producto: S.sel.prod.nombre });
 }
 function alertaCampo(sel, m) { const el = $(sel); el.style.borderColor = 'var(--err)'; el.focus(); if (!el.previousElementSibling || !el.previousElementSibling.classList.contains('msg')) el.insertAdjacentHTML('beforebegin', `<div class="msg err">${esc(m)}</div>`); }
 // No está en la lista: el servidor lo busca en ProfitGuard y MELI (envíos cancelados, Flex, etc.).
 async function buscarEnLinea(codigo) {
-  S.sel = { nada: true, codigo, buscando: true }; render();
+  S.sel = { nada: true, codigo, buscando: true, t: Date.now() }; render();
   try {
     const j = await api('buscarCodigo', { codigo });
     if (j.ok && j.esperada) {
@@ -447,8 +464,8 @@ async function buscarEnLinea(codigo) {
     } else if (j.ok && j.yaRecibida) {
       S.sel = j.devolucion ? { dev: j.devolucion, codigo } : { nada: true, codigo };
       if (!j.devolucion) S.aviso = { t: 'warn', m: 'Esta devolución ya figura recibida.' };
-    } else S.sel = { nada: true, codigo };
-  } catch (e) { S.sel = { nada: true, codigo }; }
+    } else S.sel = { nada: true, codigo, t: Date.now() };
+  } catch (e) { S.sel = { nada: true, codigo, t: Date.now() }; }
   render();
 }
 
@@ -652,7 +669,7 @@ function ligarDts() { document.querySelectorAll('[data-p]').forEach(b => b.oncli
 
 // arranque
 render();
-setInterval(() => { if (S.token && !lector && S.vista !== 'procesar') cargar(true); }, 120000);
+setInterval(() => { if (S.token && !camAbierta && S.vista !== 'procesar' && !(S.sel && S.sel.buscando)) cargar(true); }, 120000);
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>
 </body>
