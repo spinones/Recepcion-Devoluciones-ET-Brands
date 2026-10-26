@@ -119,7 +119,7 @@ const PORTALES = {
 };
 const MARKETPLACES = Object.keys(PORTALES);
 const TIPOS = { comprador: 'Devolución del cliente', no_entregada: 'No entregada' };
-const ETAPAS = { entregada: 'Entregada en bodega', en_camino: 'En camino', por_despachar: 'Por despachar' };
+const ETAPAS = { entregada: 'Entregada en bodega', en_camino: 'En camino', por_despachar: 'Por despachar', full: 'Full: solo gestionar en portal' };
 const finDeHoy = () => { const d = ahoraChile(); d.setHours(23, 59, 59, 999); return d; };
 const venceHoy = s => s && fecha(s) <= finDeHoy();
 
@@ -294,7 +294,7 @@ function vistaInicio() {
   const enCamino = D.esperadas.filter(e => e.etapa === 'en_camino').length;
   const bloque = (titulo, ayuda, items, fn, tono) => `<div class="card"><div class="fila"><h2 class="esp">${titulo}</h2><span class="pill ${items.length ? tono : 'p-ok'}">${items.length}</span></div>
     <p class="sub">${ayuda}</p>${items.length ? `<div class="lista">${items.slice(0, 8).map(fn).join('')}</div>${items.length > 8 ? `<p class="sub">y ${items.length - 8} más</p>` : ''}` : '<div class="vacio">Nada pendiente.</div>'}</div>`;
-  const foco = bloque('Plazo del marketplace vence hoy', 'Hay que gestionarlas hoy en el portal, hayan llegado o no.', plazoHoy, itemEsp, 'p-err')
+  const foco = bloque('Plazo del marketplace vence hoy', 'Aceptar, apelar o revisar hoy en el portal. Las Full no llegan a la bodega: solo se gestionan.', plazoHoy, itemEsp, 'p-err')
     + bloque('Entregadas y sin escanear', 'El marketplace dice que ya llegaron a la bodega. Búscalas y recíbelas.', sinEscanear, itemEsp, 'p-err')
     + bloque('En ET Brands: se cierran hoy', 'Recibidas que deben procesarse antes de que termine el día.', cierranHoy, itemDev, 'p-warn');
   return `<div><h1>Hola, ${esc((S.usuario.nombre || '').split(' ')[0])}</h1><p class="sub">Actualizado ${corta(D.ahora)}</p></div>
@@ -328,7 +328,8 @@ function itemEsp(e) {
   const dias = e.fecha_inicio ? Math.floor((ahoraChile() - fecha(e.fecha_inicio)) / 864e5) : null;
   return `<div class="item" data-esp="${esc(e.id)}">
     <div class="r1"><span class="prod">${esc(e.producto || e.sku || 'Sin detalle')}</span><span class="pill ${e.etapa === 'entregada' ? 'p-err' : e.tipo === 'no_entregada' ? 'p-gris' : 'p-nar'}">${esc(ETAPAS[e.etapa] || TIPOS[e.tipo] || '')}</span></div>
-    ${e.plazo_mkp ? `<div class="meta" style="color:${venceHoy(e.plazo_mkp) ? 'var(--err)' : 'var(--gris)'};font-weight:600">Plazo marketplace: ${corta(e.plazo_mkp)}</div>` : ''}
+    ${e.plazo_mkp ? `<div class="meta" style="color:${venceHoy(e.plazo_mkp) ? 'var(--err)' : 'var(--gris)'};font-weight:600">Plazo marketplace: ${corta(e.plazo_mkp)} · ${restante(e.plazo_mkp).txt}</div>` : ''}
+    ${e.estado_mkp ? `<div class="meta">${esc(e.estado_mkp)}</div>` : ''}
     <div class="meta">${esc(e.marketplace)} · ${esc(TIPOS[e.tipo] || '')} · orden ${esc(e.orden)} · ${esc(e.sku)}${e.motivo ? ' · ' + esc(e.motivo) : ''}</div>
     <div class="meta mono">${esc(String(e.codigos || '').split('|').join(' · '))}${dias !== null ? ` · hace ${dias} d` : ''}</div></div>`;
 }
