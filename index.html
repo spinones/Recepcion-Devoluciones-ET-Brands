@@ -198,7 +198,7 @@ function coincide(tok, codigos) {
 function buscar(texto) {
   const toks = tokens(texto);
   const D = S.datos;
-  const dev = D.devoluciones.find(d => toks.some(t => coincide(t, [limpiar(d.codigo_escaneado), limpiar(d.orden)])));
+  const dev = D.devoluciones.find(d => toks.some(t => coincide(t, String(d.codigo_escaneado || '').split(/\s+/).concat([d.orden]).map(limpiar))));
   if (dev) return { dev };
   const esp = D.esperadas.find(e => toks.some(t => coincide(t, String(e.codigos || '').split('|').concat([e.orden]).map(limpiar))));
   return { esp };
@@ -358,7 +358,8 @@ function vistaRecibir() {
       <p class="sub">Al confirmar queda "En ET Brands" y parte el plazo de 1 día hábil para procesarla.</p></div>`;
   } else if (sel && sel.nada) {
     res = `<div class="card"><div class="msg warn">"${esc(sel.codigo)}" no está en las devoluciones esperadas.</div>
-      <p class="sub">Si la etiqueta trae el número de orden (Ripley lo imprime arriba, ej. 25271009801-A), escríbelo en el escáner y presiona Enter. Si igual no aparece, recíbela como no identificada: se une sola cuando el marketplace la informe.</p>
+      <p class="sub"><b>Escanea otra etiqueta del mismo paquete.</b> Las de 99minutos u otros couriers suelen traer debajo la etiqueta original de Mercado Libre o del marketplace. También sirve escribir el número de venta u orden (Ripley lo imprime arriba, ej. 25271009801-A). La app guarda ambos códigos.</p>
+      <p class="sub">Si ninguna etiqueta aparece, recíbela como no identificada: se une sola cuando el marketplace la informe.</p>
       <label class="f">Marketplace<select id="nMk"><option value="">Elegir…</option>${MARKETPLACES.map(m => `<option>${m}</option>`).join('')}</select></label>
       <label class="f">Nº de orden (si se ve en la etiqueta)<input id="nOr" autocomplete="off"></label>
       <label class="f">Producto o SKU (opcional)<input id="nPr" autocomplete="off"></label>
@@ -370,8 +371,11 @@ function vistaRecibir() {
 function ligarRecibir() {
   ligarEscaner('scR', txt => {
     const r = buscar(txt);
+    // Si la etiqueta anterior no se reconoció, esta segunda identifica el paquete y se guardan ambos códigos.
+    const previo = S.sel && S.sel.nada ? S.sel.codigo : '';
+    const cod = previo && (r.dev || r.esp) ? previo + ' ' + txt : txt;
     S.aviso = null;
-    S.sel = r.dev ? { dev: r.dev, codigo: txt } : r.esp ? { esp: r.esp, codigo: txt } : { nada: true, codigo: txt };
+    S.sel = r.dev ? { dev: r.dev, codigo: cod } : r.esp ? { esp: r.esp, codigo: cod } : { nada: true, codigo: previo ? previo + ' ' + txt : txt };
     render();
   });
   const c = $('#confirmar');
