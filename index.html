@@ -107,7 +107,7 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 // ====== CONFIGURACIÓN: pega aquí la URL /exec del Apps Script publicado ======
-const VERSION = '2026.10.26-9';
+const VERSION = '2026.10.26-10';
 const API_URL = 'https://script.google.com/macros/s/AKfycbxYHuQd_UwrjCn3LQ0Y_q35DRnTWrO-Yx3UI8MLodUQFWnZaXGCi_zgbD1rwylW-f7k/exec';
 // ============================================================================
 
@@ -504,7 +504,7 @@ async function buscarEnLinea(codigo, desde) {
     } else if (j.ok && j.yaRecibida) {
       S.sel = j.devolucion ? { dev: j.devolucion, codigo } : { nada: true, codigo };
       if (!j.devolucion) S.aviso = { t: 'warn', m: 'Esta devolución ya figura recibida.' };
-    } else { S.sel = { nada: true, codigo, t: Date.now() }; reportar('no encontrado (' + (desde || 'recepcion') + '): ' + codigo); }
+    } else { S.sel = { nada: true, codigo, t: Date.now() }; reportar((j.ok ? 'no encontrado' : 'error servidor: ' + j.error) + ' (' + (desde || 'recepcion') + '): ' + codigo); }
   } catch (e) { S.sel = { nada: true, codigo, t: Date.now() }; reportar('error búsqueda: ' + codigo + ' · ' + (e.message || e)); }
   render();
 }
