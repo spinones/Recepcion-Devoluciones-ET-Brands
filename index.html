@@ -107,7 +107,7 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 // ====== CONFIGURACIÓN: pega aquí la URL /exec del Apps Script publicado ======
-const VERSION = '2026.10.26-10';
+const VERSION = '2026.10.26-11';
 const API_URL = 'https://script.google.com/macros/s/AKfycbxYHuQd_UwrjCn3LQ0Y_q35DRnTWrO-Yx3UI8MLodUQFWnZaXGCi_zgbD1rwylW-f7k/exec';
 // ============================================================================
 
@@ -537,13 +537,21 @@ function vistaPendientes() {
   return `<div><h1>Devoluciones pendientes de recepción</h1><p class="sub">Lo que los marketplaces informan que viene a la bodega. Arriba lo que tiene plazo hoy y lo que ya figura entregado.</p></div>
   <div class="chips">${['Todos', ...MARKETPLACES].map(m => `<button class="chip" data-mk="${m}" aria-pressed="${S.filtroMk === m}">${m} (${cuenta(m)})</button>`).join('')}</div>
   <div class="chips">${[['', 'Todas las etapas'], ['entregada', 'Entregadas sin escanear'], ['en_camino', 'En camino'], ['por_despachar', 'Por despachar']].map(([k, t]) => `<button class="chip" data-et="${k}" aria-pressed="${(S.filtroEt || '') === k}">${t}${k ? ` (${cuentaEt(k)})` : ''}</button>`).join('')}</div>
-  <label class="f">Buscar<input id="bq" value="${esc(S.busqueda)}" placeholder="Orden, SKU, producto o tracking"></label>
+  <label class="f">Buscar (o escanear: te lleva a Recepción)<input id="bq" value="${esc(S.busqueda)}" placeholder="Orden, SKU, producto o tracking"></label>
   <div class="lista">${l.length ? l.map(itemEsp).join('') : '<div class="vacio">No hay devoluciones pendientes con este filtro.</div>'}</div>`;
 }
 function ligarPendientes() {
   document.querySelectorAll('[data-mk]').forEach(b => b.onclick = () => { S.filtroMk = b.dataset.mk; render(); });
   document.querySelectorAll('[data-et]').forEach(b => b.onclick = () => { S.filtroEt = b.dataset.et; render(); });
-  const q = $('#bq'); q.oninput = () => { S.busqueda = q.value; const pos = q.selectionStart; render(); const n = $('#bq'); n.focus(); n.setSelectionRange(pos, pos); };
+  const q = $('#bq');
+  // Si se escanea aquí (el lector termina con Enter), se procesa como en Recepción.
+  q.onkeydown = e => {
+    if (e.key !== 'Enter' || !q.value.trim()) return;
+    let v = q.value.trim(); try { const j = JSON.parse(v); if (j && j.id) v = String(j.id); } catch (er) {}
+    S.busqueda = ''; S.vista = 'recibir'; S.sel = null; render();
+    const inp = $('#scR'); inp.value = v; inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+  };
+  q.oninput = () => { S.busqueda = q.value; const pos = q.selectionStart; render(); const n = $('#bq'); n.focus(); n.setSelectionRange(pos, pos); };
   ligarEsp();
 }
 
