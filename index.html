@@ -198,12 +198,22 @@ function porEan(texto) {
   return k.length >= 7 && S.catalogo[k] ? S.catalogo[k] : null;
 }
 
+// Solo cuenta una versión con formato válido (si el archivo no existe o falla, no se recarga).
+async function versionPublicada() {
+  try {
+    const r = await fetch('version.txt?t=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) return null;
+    const v = (await r.text()).trim();
+    return /^\d{4}\.\d{2}\.\d{2}-\d+$/.test(v) ? v : null;
+  } catch (e) { return null; }
+}
+let recargado = false;
 async function revisarVersion() {
   try {
-    const v = (await (await fetch('version.txt?t=' + Date.now(), { cache: 'no-store' })).text()).trim();
+    const v = await versionPublicada();
     if (v && v !== VERSION) {
       const ocupado = (S.form && (S.form.condicion || S.form.fotos.length)) || (S.sel && (S.sel.esp || S.sel.buscando));
-      if (!ocupado) location.reload();
+      if (!ocupado && !recargado) { recargado = true; location.reload(); }
       else S.aviso = { t: 'warn', m: 'Hay una versión nueva de la app. Termina lo que estás haciendo y toca ⟳ Actualizar.' };
     }
   } catch (e) { /* sin conexión */ }
@@ -311,7 +321,7 @@ function ligarComun() {
   const s = $('#salir'); if (s) s.onclick = e => { e.preventDefault(); salir(); };
   const rf = $('#refrescar'); if (rf) rf.onclick = async () => {
     rf.disabled = true; rf.textContent = '⟳ …';
-    try { const v = (await (await fetch('version.txt?t=' + Date.now(), { cache: 'no-store' })).text()).trim(); if (v && v !== VERSION) return location.reload(); } catch (e) {}
+    const v = await versionPublicada(); if (v && v !== VERSION) return location.reload();
     await cargar(true); render();
   };
   document.querySelectorAll('[data-ir]').forEach(b => b.onclick = () => ir(b.dataset.ir));
