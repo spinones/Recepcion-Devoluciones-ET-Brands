@@ -173,12 +173,37 @@ async function api(action, body = {}) {
 }
 async function sha256(t) { const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t)); return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join(''); }
 
+async function cargarCatalogo() {
+  try {
+    const g = JSON.parse(localStorage.getItem('rd_catalogo') || 'null');
+    if (g && Date.now() - g.t < 20 * 36e5) { S.catalogo = indexar(g.p); return; }
+  } catch (e) {}
+  try {
+    const j = await api('catalogo');
+    if (!j.ok) return;
+    S.catalogo = indexar(j.productos);
+    try { localStorage.setItem('rd_catalogo', JSON.stringify({ t: Date.now(), p: j.productos })); } catch (e) {}
+  } catch (e) { /* sin catálogo: el EAN no se reconoce, lo demás funciona */ }
+}
+// EAN sin ceros a la izquierda → [{sku, nombre}]
+function indexar(prods) {
+  const m = {};
+  prods.forEach(([sku, ean, nombre]) => { const k = String(ean || '').replace(/\D/g, '').replace(/^0+/, ''); if (k) (m[k] = m[k] || []).push({ sku, nombre }); });
+  return m;
+}
+function porEan(texto) {
+  if (!S.catalogo) return null;
+  const k = String(texto || '').replace(/\D/g, '').replace(/^0+/, '');
+  return k.length >= 7 && S.catalogo[k] ? S.catalogo[k] : null;
+}
+
 async function cargar(silencioso) {
   try {
     const j = await api('datos');
     if (!j.ok) throw new Error(j.error);
     j._base = { servidor: fecha(j.ahora), local: Date.now() };
     S.datos = j;
+    if (!S.catalogo) cargarCatalogo();
     if (!silencioso || !document.activeElement || document.activeElement.tagName !== 'INPUT') render();
   } catch (e) { if (!silencioso) { S.aviso = { t: 'err', m: e.message }; render(); } }
 }
@@ -201,7 +226,10 @@ function buscar(texto) {
   const dev = D.devoluciones.find(d => toks.some(t => coincide(t, String(d.codigo_escaneado || '').split(/\s+/).concat([d.orden]).map(limpiar))));
   if (dev) return { dev };
   const esp = D.esperadas.find(e => toks.some(t => coincide(t, String(e.codigos || '').split('|').concat([e.orden]).map(limpiar))));
-  return { esp };
+  if (esp) return { esp };
+  const prods = porEan(texto);
+  if (prods) return { prod: { skus: prods.map(p => p.sku), nombre: prods[0].nombre, ean: texto } };
+  return {};
 }
 
 // ---------- cámara ----------
@@ -256,7 +284,7 @@ function ligarComun() {
   const s = $('#salir'); if (s) s.onclick = e => { e.preventDefault(); salir(); };
   document.querySelectorAll('[data-ir]').forEach(b => b.onclick = () => ir(b.dataset.ir));
 }
-function ir(v, extra = {}) { S.vista = v; S.aviso = null; S.sel = null; S.form = null; Object.assign(S, extra); render(); window.scrollTo(0, 0); }
+function ir(v, extra = {}) { S.vista = v; S.aviso = null; S.sel = null; S.form = null; S.filtroProd = null; Object.assign(S, extra); render(); window.scrollTo(0, 0); }
 function salir() { S.token = null; S.usuario = null; S.datos = null; try { localStorage.removeItem('rd_sesion'); } catch (e) {} render(); }
 
 // login
@@ -353,9 +381,19 @@ function vistaRecibir() {
     const e = sel.esp;
     res = `<div class="card"><div class="r1 fila"><h2 class="esp">${esc(e.producto || e.sku)}</h2><span class="pill p-nar">${esc(TIPOS[e.tipo] || '')}</span></div>
       <div class="kv"><span>Marketplace</span><b>${esc(e.marketplace)}</b><span>Orden</span><b class="mono">${esc(e.orden)}</b><span>SKU</span><b>${esc(e.sku)}</b>
-      <span>Cantidad</span><b>${esc(e.cantidad || 1)}</b><span>Motivo</span><b>${esc(e.motivo || '—')}</b><span>Código leído</span><b class="mono">${esc(sel.codigo)}</b></div>
+      <span>Cantidad</span><b>${esc(e.cantidad || 1)}</b><span>Motivo</span><b>${esc(e.motivo || '—')}</b>${sel.codigo ? `<span>Código leído</span><b class="mono">${esc(sel.codigo)}</b>` : '<span>Elegida por</span><b>EAN del producto</b>'}</div>
       <button class="btn nar full" id="confirmar">Confirmar recepción</button>
       <p class="sub">Al confirmar queda "En ET Brands" y parte el plazo de 1 día hábil para procesarla.</p></div>`;
+  } else if (sel && sel.prod) {
+    const P = sel.prod;
+    const urg = e => (venceHoy(e.plazo_mkp) ? 0 : e.etapa === 'entregada' ? 1 : e.etapa === 'en_camino' ? 2 : 3);
+    const l = S.datos.esperadas.filter(e => P.skus.includes(e.sku) && e.etapa !== 'full')
+      .sort((a, b) => urg(a) - urg(b) || (a.plazo_mkp || '9').localeCompare(b.plazo_mkp || '9') || (a.fecha_inicio || '').localeCompare(b.fecha_inicio || ''));
+    res = `<div class="card"><h2>${esc(P.nombre)}</h2><p class="sub">EAN ${esc(P.ean)} · SKU ${esc(P.skus.join(', '))}</p>
+      ${l.length ? `<p class="sub"><b>${l.length} devoluciones pendientes de este producto.</b> La primera es la más urgente; toca la que corresponde al paquete.</p>
+      <div class="lista">${l.map(e => itemEsp(e).replace('data-esp=', 'data-espean=')).join('')}</div>`
+      : `<div class="msg warn">No hay devoluciones pendientes de este producto.</div>
+      <button class="btn full" id="noIdentProd">Recibir como no identificada (${esc(P.skus[0])})</button>`}</div>`;
   } else if (sel && sel.nada) {
     res = `<div class="card"><div class="msg warn">"${esc(sel.codigo)}" no está en las devoluciones esperadas.</div>
       <p class="sub"><b>Escanea otra etiqueta del mismo paquete.</b> Las de 99minutos u otros couriers suelen traer debajo la etiqueta original de Mercado Libre o del marketplace. También sirve escribir el número de venta u orden (Ripley lo imprime arriba, ej. 25271009801-A). La app guarda ambos códigos.</p>
@@ -365,7 +403,7 @@ function vistaRecibir() {
       <label class="f">Producto o SKU (opcional)<input id="nPr" autocomplete="off"></label>
       <button class="btn full" id="noIdent">Recibir como no identificada</button></div>`;
   }
-  return `<div><h1>Recepción</h1><p class="sub">Escanea la etiqueta de la devolución (código de barras o QR). En PC usa el lector; en el celular toca 📷.</p></div>
+  return `<div><h1>Recepción</h1><p class="sub">Escanea la etiqueta de devolución, la etiqueta de envío original o el EAN del producto. En PC usa el lector; en el celular toca 📷.</p></div>
   ${escaner('scR', 'Escanear o escribir tracking / orden')}${res}`;
 }
 function ligarRecibir() {
@@ -375,7 +413,7 @@ function ligarRecibir() {
     const previo = S.sel && S.sel.nada ? S.sel.codigo : '';
     const cod = previo && (r.dev || r.esp) ? previo + ' ' + txt : txt;
     S.aviso = null;
-    S.sel = r.dev ? { dev: r.dev, codigo: cod } : r.esp ? { esp: r.esp, codigo: cod } : { nada: true, codigo: previo ? previo + ' ' + txt : txt };
+    S.sel = r.dev ? { dev: r.dev, codigo: cod } : r.esp ? { esp: r.esp, codigo: cod } : r.prod ? { prod: r.prod } : { nada: true, codigo: previo ? previo + ' ' + txt : txt };
     render();
   });
   const c = $('#confirmar');
@@ -387,6 +425,13 @@ function ligarRecibir() {
     recibir({ codigo: S.sel.codigo, marketplace: $('#nMk').value, orden: $('#nOr').value.trim(), producto: pr, sku: /^[A-Z0-9-]+$/i.test(pr) ? pr.toUpperCase() : '' });
   };
   const p = $('#aProcesar'); if (p) p.onclick = () => abrirProceso(S.sel.dev.id);
+  // Elegida desde la lista por EAN: se recibe por la devolución esperada, sin guardar el EAN como código del paquete.
+  document.querySelectorAll('[data-espean]').forEach(b => b.onclick = () => {
+    const e = S.datos.esperadas.find(x => x.id === b.dataset.espean);
+    S.sel = { esp: e, codigo: '' }; render(); window.scrollTo(0, 0);
+  });
+  const np = $('#noIdentProd');
+  if (np) np.onclick = () => recibir({ codigo: '', marketplace: '', sku: S.sel.prod.skus[0], producto: S.sel.prod.nombre });
 }
 function alertaCampo(sel, m) { const el = $(sel); el.style.borderColor = 'var(--err)'; el.focus(); if (!el.previousElementSibling || !el.previousElementSibling.classList.contains('msg')) el.insertAdjacentHTML('beforebegin', `<div class="msg err">${esc(m)}</div>`); }
 async function recibir(body) {
@@ -437,10 +482,12 @@ function abrirProceso(id) {
 function vistaProcesar() {
   const D = S.datos;
   if (S.sel && S.sel.id) return formProceso(D.devoluciones.find(x => x.id === S.sel.id));
-  const cola = D.devoluciones.filter(abierta).sort((a, b) => fecha(a.vence_sla) - fecha(b.vence_sla));
+  const FP = S.filtroProd;
+  const cola = D.devoluciones.filter(d => abierta(d) && (!FP || FP.skus.includes(d.sku))).sort((a, b) => fecha(a.vence_sla) - fecha(b.vence_sla));
   const hechas = D.devoluciones.filter(esProc).sort((a, b) => (b.procesado_en || '').localeCompare(a.procesado_en || '')).slice(0, 10);
   return `<div><h1>Procesar devolución</h1><p class="sub">Escanea la etiqueta para ver qué producto se espera y registrar en qué estado llegó. Plazo: 1 día hábil desde la recepción.</p></div>
-  ${escaner('scP', 'Escanear etiqueta de la devolución')}
+  ${escaner('scP', 'Escanear etiqueta o EAN del producto')}
+  ${FP ? `<div class="msg ok">Mostrando solo ${esc(FP.nombre)} (EAN ${esc(FP.ean)}). <a href="#" id="quitarFP">Ver todas</a></div>` : ''}
   <div class="card"><h2>Por procesar (${cola.length})</h2>${cola.length ? `<div class="lista">${cola.map(itemDev).join('')}</div>` : '<div class="vacio">Todo al día.</div>'}</div>
   ${hechas.length ? `<div class="card"><h2>Últimas procesadas</h2><div class="lista">${hechas.map(itemDev).join('')}</div></div>` : ''}`;
 }
@@ -482,11 +529,18 @@ function ligarProcesar() {
     ligarEscaner('scP', txt => {
       const r = buscar(txt);
       if (r.dev) return abrirProceso(r.dev.id);
+      if (r.prod) {
+        const abiertas = S.datos.devoluciones.filter(d => abierta(d) && r.prod.skus.includes(d.sku));
+        if (abiertas.length === 1) return abrirProceso(abiertas[0].id);
+        S.filtroProd = r.prod; S.aviso = abiertas.length ? null : { t: 'warn', m: `No hay devoluciones recibidas por procesar de ${r.prod.nombre}.` };
+        return render();
+      }
       if (r.esp) { S.vista = 'recibir'; S.sel = { esp: r.esp, codigo: txt }; S.aviso = { t: 'warn', m: 'Esta devolución todavía no se ha recibido. Confírmala primero.' }; }
       else S.aviso = { t: 'warn', m: `"${txt}" no corresponde a ninguna devolución recibida.` };
       render();
     });
     document.querySelectorAll('[data-dev]').forEach(b => b.onclick = () => abrirProceso(b.dataset.dev));
+    const q = $('#quitarFP'); if (q) q.onclick = e => { e.preventDefault(); S.filtroProd = null; render(); };
     return;
   }
   const v = $('#volver'); if (v) v.onclick = () => ir('procesar');
