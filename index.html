@@ -375,7 +375,7 @@ function vistaRecibir() {
   let res = '';
   if (sel && sel.dev) {
     const d = sel.dev;
-    res = `<div class="msg warn">Esta devolución ya fue recibida el ${corta(d.recibido_en)} por ${esc(d.recibido_por)}. Estado: <b>${esc(d.estado)}</b>.</div>
+    res = `<div class="msg warn">Esta devolución ya fue recibida el ${corta(d.recibido_en)} por ${esc(d.recibido_por)}${d.origen === 'App anterior' ? ' (en la app anterior)' : ''}. ${esc(d.producto || d.sku || '')} · Estado: <b>${esc(d.estado)}</b>.</div>
     ${abierta(d) ? `<button class="btn full" id="aProcesar">Procesarla ahora</button>` : ''}`;
   } else if (sel && sel.esp) {
     const e = sel.esp;
@@ -444,8 +444,9 @@ async function buscarEnLinea(codigo) {
       S.datos.esperadas.push(j.esperada);
       S.sel = { esp: j.esperada, codigo };
       S.aviso = { t: 'ok', m: 'No estaba en la lista; la encontré en ' + j.esperada.marketplace + '.' };
-    } else if (j.ok && j.yaRecibida && j.devolucion) {
-      S.sel = { dev: j.devolucion, codigo };
+    } else if (j.ok && j.yaRecibida) {
+      S.sel = j.devolucion ? { dev: j.devolucion, codigo } : { nada: true, codigo };
+      if (!j.devolucion) S.aviso = { t: 'warn', m: 'Esta devolución ya figura recibida.' };
     } else S.sel = { nada: true, codigo };
   } catch (e) { S.sel = { nada: true, codigo }; }
   render();
