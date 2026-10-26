@@ -107,7 +107,7 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 // ====== CONFIGURACIÓN: pega aquí la URL /exec del Apps Script publicado ======
-const VERSION = '2026.10.26-8';
+const VERSION = '2026.10.26-9';
 const API_URL = 'https://script.google.com/macros/s/AKfycbxYHuQd_UwrjCn3LQ0Y_q35DRnTWrO-Yx3UI8MLodUQFWnZaXGCi_zgbD1rwylW-f7k/exec';
 // ============================================================================
 
@@ -493,21 +493,23 @@ function ligarRecibir() {
 }
 function alertaCampo(sel, m) { const el = $(sel); el.style.borderColor = 'var(--err)'; el.focus(); if (!el.previousElementSibling || !el.previousElementSibling.classList.contains('msg')) el.insertAdjacentHTML('beforebegin', `<div class="msg err">${esc(m)}</div>`); }
 // No está en la lista: el servidor lo busca en ProfitGuard y MELI (envíos cancelados, Flex, etc.).
-async function buscarEnLinea(codigo) {
+async function buscarEnLinea(codigo, desde) {
   S.sel = { nada: true, codigo, buscando: true, t: Date.now() }; render();
   try {
     const j = await api('buscarCodigo', { codigo });
     if (j.ok && j.esperada) {
       S.datos.esperadas.push(j.esperada);
       S.sel = { esp: j.esperada, codigo };
-      S.aviso = { t: 'ok', m: 'No estaba en la lista; la encontré en ' + j.esperada.marketplace + '.' };
+      S.aviso = { t: 'ok', m: (desde === 'procesar' ? 'Todavía no estaba recibida. La encontré en ' : 'No estaba en la lista; la encontré en ') + j.esperada.marketplace + '. Confirma la recepción.' };
     } else if (j.ok && j.yaRecibida) {
       S.sel = j.devolucion ? { dev: j.devolucion, codigo } : { nada: true, codigo };
       if (!j.devolucion) S.aviso = { t: 'warn', m: 'Esta devolución ya figura recibida.' };
-    } else S.sel = { nada: true, codigo, t: Date.now() };
-  } catch (e) { S.sel = { nada: true, codigo, t: Date.now() }; }
+    } else { S.sel = { nada: true, codigo, t: Date.now() }; reportar('no encontrado (' + (desde || 'recepcion') + '): ' + codigo); }
+  } catch (e) { S.sel = { nada: true, codigo, t: Date.now() }; reportar('error búsqueda: ' + codigo + ' · ' + (e.message || e)); }
   render();
 }
+
+function reportar(detalle) { api('reportar', { detalle: 'v' + VERSION + ' · ' + detalle }).catch(() => {}); }
 
 async function recibir(body) {
   document.querySelectorAll('#confirmar,#noIdent').forEach(b => b.disabled = true);
@@ -610,9 +612,10 @@ function ligarProcesar() {
         S.filtroProd = r.prod; S.aviso = abiertas.length ? null : { t: 'warn', m: `No hay devoluciones recibidas por procesar de ${r.prod.nombre}.` };
         return render();
       }
-      if (r.esp) { S.vista = 'recibir'; S.sel = { esp: r.esp, codigo: txt }; S.aviso = { t: 'warn', m: 'Esta devolución todavía no se ha recibido. Confírmala primero.' }; }
-      else S.aviso = { t: 'warn', m: `"${txt}" no corresponde a ninguna devolución recibida.` };
-      render();
+      if (r.esp) { S.vista = 'recibir'; S.sel = { esp: r.esp, codigo: txt }; S.aviso = { t: 'warn', m: 'Esta devolución todavía no se ha recibido. Confírmala primero.' }; return render(); }
+      // No está en la app: se busca en línea y, si aparece, se ofrece recibirla.
+      S.vista = 'recibir';
+      return buscarEnLinea(txt, 'procesar');
     });
     document.querySelectorAll('[data-dev]').forEach(b => b.onclick = () => abrirProceso(b.dataset.dev));
     const q = $('#quitarFP'); if (q) q.onclick = e => { e.preventDefault(); S.filtroProd = null; render(); };
