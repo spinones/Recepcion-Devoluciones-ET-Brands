@@ -113,7 +113,7 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 // ====== CONFIGURACIÓN: pega aquí la URL /exec del Apps Script publicado ======
-const VERSION = '2026.10.27-3';
+const VERSION = '2026.10.27-4';
 const API_URL = 'https://script.google.com/macros/s/AKfycbxYHuQd_UwrjCn3LQ0Y_q35DRnTWrO-Yx3UI8MLodUQFWnZaXGCi_zgbD1rwylW-f7k/exec';
 // ============================================================================
 
@@ -134,8 +134,9 @@ const finDeHoy = () => { const d = ahoraChile(); d.setHours(23, 59, 59, 999); re
 const venceHoy = s => s && fecha(s) <= finDeHoy();
 
 const CONDICIONES = [
-  { v: 'Sin fallas', d: 'Llega como se envió', cl: 'Reintegrable' },
-  { v: 'Packing dañado', d: 'Caja o empaque dañado, producto OK', cl: 'Reacondicionable' },
+  { v: 'Sin fallas', d: 'Llega como se envió', cl: 'Reintegrable', sinFoto: true, aceptar: true },
+  { v: 'Packing con desgaste de envío', d: 'Golpes del transporte o lleno de etiquetas; producto OK. No es culpa del cliente', cl: 'Reacondicionable', sinFoto: true, aceptar: true },
+  { v: 'Packing dañado', d: 'Empaque roto o abierto por el cliente, producto OK', cl: 'Reacondicionable' },
   { v: 'Producto usado', d: 'Sucio, con uso o pelos', cl: 'Reacondicionable' },
   { v: 'Incompleto', d: 'Faltan piezas o accesorios', cl: 'Reacondicionable' },
   { v: 'Producto dañado', d: 'Roto o no funciona', cl: 'Merma' },
@@ -596,7 +597,7 @@ function formProceso(d) {
   }
   const F = S.form, r = restante(d.vence_sla), s = semaforo(d);
   const op = (grupo, lista) => lista.map(o => `<button class="opt" data-g="${grupo}" data-val="${esc(o.v || o)}" aria-pressed="${F[grupo] === (o.v || o)}">${esc(o.l || o.v || o)}${o.d ? `<small>${esc(o.d)}</small>` : ''}</button>`).join('');
-  const fotoObligatoria = F.condicion && F.condicion !== 'Sin fallas';
+  const fotoObligatoria = F.condicion && !(CONDICIONES.find(c => c.v === F.condicion) || {}).sinFoto;
   return `<button class="btn sec" id="volver" style="justify-self:start">← Volver</button>
   <div class="card">
     <div class="fila"><h2 class="esp">${esc(d.producto || 'Producto sin identificar')}</h2><span class="pill p-${s}">${esc(r.txt)}</span></div>
@@ -668,8 +669,8 @@ function ligarProcesar() {
       const c = CONDICIONES.find(x => x.v === b.dataset.val);
       F.clasificacion = c.cl;
       const d = S.datos.devoluciones.find(x => x.id === S.sel.id);
-      if (d.tipo === 'no_entregada') F.accion = c.v === 'Sin fallas' ? 'Sin acción' : 'Reclamar';
-      else F.accion = c.v === 'Sin fallas' ? 'Aceptar' : (d.marketplace === 'Mercado Libre' ? 'Reclamar' : 'Apelar');
+      if (d.tipo === 'no_entregada') F.accion = c.aceptar ? 'Sin acción' : 'Reclamar';
+      else F.accion = c.aceptar ? 'Aceptar' : (d.marketplace === 'Mercado Libre' ? 'Reclamar' : 'Apelar');
     }
     render();
   });
@@ -682,7 +683,7 @@ function ligarProcesar() {
     guardarCampos();
     const d = S.datos.devoluciones.find(x => x.id === S.sel.id);
     const falta = !F.condicion ? 'Elige en qué estado viene' : !F.clasificacion ? 'Elige la clasificación' : !F.accion ? 'Elige la acción en el marketplace'
-      : (F.condicion !== 'Sin fallas' && !F.fotos.length) ? 'Agrega al menos una foto: sin evidencia no se puede apelar ni reclamar'
+      : (!(CONDICIONES.find(c => c.v === F.condicion) || {}).sinFoto && !F.fotos.length) ? 'Agrega al menos una foto: sin evidencia no se puede apelar ni reclamar'
       : (d.identificada === 'No' && !F.sku && !d.sku) ? 'Escribe el SKU del producto recibido' : '';
     if (falta) { S.aviso = { t: 'err', m: falta }; render(); return; }
     $('#guardar').disabled = true; $('#guardar').textContent = 'Guardando…';
