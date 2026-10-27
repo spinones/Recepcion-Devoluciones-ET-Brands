@@ -107,7 +107,7 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 // ====== CONFIGURACIÓN: pega aquí la URL /exec del Apps Script publicado ======
-const VERSION = '2026.10.26-12';
+const VERSION = '2026.10.27-1';
 const API_URL = 'https://script.google.com/macros/s/AKfycbxYHuQd_UwrjCn3LQ0Y_q35DRnTWrO-Yx3UI8MLodUQFWnZaXGCi_zgbD1rwylW-f7k/exec';
 // ============================================================================
 
@@ -608,9 +608,25 @@ function formProceso(d) {
   <button class="btn nar full" id="guardar">Guardar y cerrar procesamiento</button>`;
 }
 function linkPortal(d) {
-  const url = d.link || PORTALES[d.marketplace];
-  return url && d.accion_mkp !== 'Sin acción' ? `<a class="btn full" style="text-align:center;text-decoration:none" href="${esc(url)}" target="_blank" rel="noopener">Ir a ${esc(d.marketplace)} a ${esc((d.accion_mkp || 'gestionar').toLowerCase())} →</a>
-    <p class="sub">Revisamos una vez al día en el portal que la gestión esté hecha. Si no, cuenta como incumplimiento en el DTS.</p>` : '';
+  if (d.accion_mkp === 'Sin acción') return '';
+  // MELI: la venta exacta (ahí está el botón para revisar la devolución). Otros: su portal de devoluciones.
+  const meli = d.marketplace === 'Mercado Libre' && /^\d{10,}$/.test(d.orden || '');
+  const url = meli ? 'https://www.mercadolibre.cl/ventas/' + d.orden + '/detalle' : (PORTALES[d.marketplace] || d.link);
+  if (!url) return '';
+  const acc = esc((d.accion_mkp || 'gestionar').toLowerCase());
+  return `<div class="card" style="border-color:var(--naranja)"><h2>Falta gestionarla en ${esc(d.marketplace)}</h2>
+    <p class="sub">Acción: <b>${esc(d.accion_mkp || '—')}</b> · Orden <b class="mono">${esc(d.orden || '—')}</b>${meli ? '' : ' · búscala en el portal pegando el número de orden'}</p>
+    <div class="fila">
+      <a class="btn nar esp" style="text-align:center;text-decoration:none" href="${esc(url)}" target="_blank" rel="noopener">Abrir ${meli ? 'la venta en MELI' : esc(d.marketplace)} para ${acc} →</a>
+      <button class="btn sec" data-copiar="${esc(d.orden || '')}">Copiar Nº de orden</button>
+    </div>
+    <p class="sub">Revisamos una vez al día en el portal que la gestión esté hecha. Si no, cuenta como incumplimiento en el DTS.</p></div>`;
+}
+function ligarCopiar() {
+  document.querySelectorAll('[data-copiar]').forEach(b => b.onclick = async () => {
+    try { await navigator.clipboard.writeText(b.dataset.copiar); b.textContent = 'Copiado ✓'; }
+    catch (e) { b.textContent = b.dataset.copiar; } // sin portapapeles: se muestra para copiar a mano
+  });
 }
 function ligarProcesar() {
   if (!S.sel) {
@@ -633,6 +649,7 @@ function ligarProcesar() {
     return;
   }
   const v = $('#volver'); if (v) v.onclick = () => ir('procesar');
+  ligarCopiar();
   const F = S.form; if (!F) return;
   document.querySelectorAll('.opt').forEach(b => b.onclick = () => {
     guardarCampos();
