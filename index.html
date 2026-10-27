@@ -33,7 +33,7 @@
   @media (min-width:900px){
     body{padding-bottom:0}
     nav.tabs{position:sticky;top:50px;bottom:auto;border:0;border-bottom:1px solid var(--borde);justify-content:center}
-    nav.tabs button{flex:0 0 130px;font-size:.85rem}
+    nav.tabs button{flex:0 0 120px;font-size:.85rem}
   }
   h1{font-size:1.3rem;margin:0}
   h2{font-size:1.05rem;margin:0}
@@ -80,6 +80,12 @@
   table{border-collapse:collapse;width:100%;font-size:.85rem;min-width:560px}
   th{text-align:left;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:var(--gris);padding:8px;border-bottom:1px solid var(--borde)}
   td{padding:8px;border-bottom:1px solid var(--borde);vertical-align:top}
+  .barras{display:grid;gap:6px}
+  .barra{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,2fr) auto;gap:8px;align-items:center;font-size:.85rem}
+  .barra .bl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .barra .bt{background:#eceae4;border-radius:4px;height:10px;overflow:hidden}
+  .barra .bt span{display:block;height:100%;background:var(--naranja);border-radius:4px}
+  .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
   .big{font-size:2.6rem;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
   .login{max-width:360px;margin:8vh auto;padding:0 16px;display:grid;gap:14px}
   .login img{max-width:200px;justify-self:center}
@@ -107,7 +113,7 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 // ====== CONFIGURACIÓN: pega aquí la URL /exec del Apps Script publicado ======
-const VERSION = '2026.10.27-2';
+const VERSION = '2026.10.27-3';
 const API_URL = 'https://script.google.com/macros/s/AKfycbxYHuQd_UwrjCn3LQ0Y_q35DRnTWrO-Yx3UI8MLodUQFWnZaXGCi_zgbD1rwylW-f7k/exec';
 // ============================================================================
 
@@ -311,10 +317,10 @@ function render() {
   const app = $('#app');
   if (!S.token) { app.innerHTML = vistaLogin(); ligarLogin(); return; }
   if (!S.datos) { app.innerHTML = cabecera() + `<main><div class="vacio">Cargando…</div></main>`; cargar(); return; }
-  const v = { inicio: vistaInicio, recibir: vistaRecibir, pendientes: vistaPendientes, procesar: vistaProcesar, dts: vistaDts }[S.vista];
+  const v = { inicio: vistaInicio, recibir: vistaRecibir, pendientes: vistaPendientes, procesar: vistaProcesar, dts: vistaDashboard, reportes: vistaReportes }[S.vista];
   app.innerHTML = cabecera() + nav() + `<main>${S.aviso ? `<div class="msg ${S.aviso.t}" role="status">${esc(S.aviso.m)}</div>` : ''}${v()}</main>`;
   ligarComun();
-  ({ inicio: ligarInicio, recibir: ligarRecibir, pendientes: ligarPendientes, procesar: ligarProcesar, dts: ligarDts }[S.vista])();
+  ({ inicio: ligarInicio, recibir: ligarRecibir, pendientes: ligarPendientes, procesar: ligarProcesar, dts: ligarDashboard, reportes: ligarReportes }[S.vista])();
 }
 
 function cabecera() {
@@ -326,7 +332,7 @@ function cabecera() {
 function nav() {
   const D = S.datos;
   const porProcesar = D.devoluciones.filter(abierta).length;
-  const items = [['inicio', '🏠', 'Inicio'], ['recibir', '📦', 'Recepción', D.esperadas.length], ['pendientes', '🕓', 'Por recibir'], ['procesar', '🔍', 'Procesar', porProcesar], ['dts', '📊', 'DTS']];
+  const items = [['inicio', '🏠', 'Inicio'], ['recibir', '📦', 'Recepción', D.esperadas.length], ['pendientes', '🕓', 'Por recibir'], ['procesar', '🔍', 'Procesar', porProcesar], ['dts', '📊', 'Dashboard'], ['reportes', '📋', 'Reportes']];
   return `<nav class="tabs">${items.map(([k, ic, l, b]) => `<button data-v="${k}" ${S.vista === k ? 'aria-current="page"' : ''}><span class="ic">${ic}</span>${l}${k === 'procesar' && b ? `<span class="badge">${b}</span>` : ''}</button>`).join('')}</nav>`;
 }
 function ligarComun() {
@@ -726,10 +732,18 @@ function kpiDts([desde, hasta]) {
     horasProm: horas.length ? Math.round(horas.reduce((a, b) => a + b, 0) / horas.length * 10) / 10 : null
   };
 }
-function vistaDts() {
+function vistaDts(embebida) {
   const k = kpiDts(periodo(S.periodo));
   const malas = [...new Set([...k.fueraSla, ...k.noGest])];
   const color = k.pct === null ? 'var(--gris)' : k.pct >= 95 ? 'var(--ok)' : k.pct >= 85 ? 'var(--warn)' : 'var(--err)';
+  if (embebida) return `<div class="card"><h2>Indicador DTS</h2><p class="sub">Cumple la devolución procesada dentro de 1 día hábil desde su recepción y gestionada en el marketplace. Solo lo recibido en la app nueva, desde el ${corta((S.datos.inicioDts || '2026-10-26') + ' 00:00:00').split(',')[0]}.</p>
+    <div class="fila"><div class="esp"><div class="big" style="color:${color}">${k.pct === null ? '—' : k.pct + '%'}</div><div class="sub">${k.cumple} de ${k.evaluables} devoluciones cumplen</div></div>
+    <div class="kv"><span>Recibidas</span><b>${k.recibidas}</b><span>Fuera de plazo</span><b>${k.fueraSla.length}</b><span>Vencidas sin procesar</span><b>${k.vencidasAbiertas}</b>
+    <span>No gestionadas en marketplace</span><b>${k.noGest.length}</b><span>Verificación pendiente</span><b>${k.verifPend}</b><span>Horas hábiles promedio</span><b>${k.horasProm ?? '—'}</b></div></div></div>
+    <div class="card"><h2>Incumplimientos del DTS (${malas.length})</h2>${malas.length ? `<div class="tbl"><table><thead><tr><th>Recibida</th><th>Producto</th><th>Marketplace</th><th>Orden</th><th>Motivo del incumplimiento</th></tr></thead><tbody>
+    ${malas.map(d => `<tr><td class="mono">${corta(d.recibido_en)}</td><td>${esc(d.producto || d.codigo_escaneado)}</td><td>${esc(d.marketplace)}</td><td class="mono">${esc(d.orden)}</td>
+    <td>${[!esProc(d) ? 'Vencida sin procesar' : d.dentro_sla !== 'Si' ? `Procesada con retraso (${esc(d.horas_proceso)} h)` : '', d.verif_mkp === 'No gestionada' ? 'No gestionada en marketplace' + (d.verif_detalle ? ': ' + esc(d.verif_detalle) : '') : ''].filter(Boolean).join(' · ')}</td></tr>`).join('')}
+    </tbody></table></div>` : '<div class="vacio">Sin incumplimientos en el período.</div>'}</div>`;
   return `<div><h1>Indicador DTS de devoluciones</h1><p class="sub">Cumple la devolución procesada dentro de 1 día hábil desde su recepción y gestionada en el marketplace (verificación diaria en el portal). Cuenta desde el ${corta((S.datos.inicioDts || '2026-10-26') + ' 00:00:00').split(',')[0]}; lo registrado en la app anterior no se considera.</p></div>
   <div class="chips">${[['semana', 'Esta semana'], ['mes', 'Este mes'], ['mesAnt', 'Mes anterior'], ['30', 'Últimos 30 días']].map(([v, l]) => `<button class="chip" data-p="${v}" aria-pressed="${S.periodo === v}">${l}</button>`).join('')}</div>
   <div class="card"><div class="fila"><div class="esp"><div class="big" style="color:${color}">${k.pct === null ? '—' : k.pct + '%'}</div><div class="sub">${k.cumple} de ${k.evaluables} devoluciones cumplen</div></div>
@@ -740,6 +754,134 @@ function vistaDts() {
     <td>${[!esProc(d) ? 'Vencida sin procesar' : d.dentro_sla !== 'Si' ? `Procesada con retraso (${esc(d.horas_proceso)} h)` : '', d.verif_mkp === 'No gestionada' ? 'No gestionada en marketplace' + (d.verif_detalle ? ': ' + esc(d.verif_detalle) : '') : ''].filter(Boolean).join(' · ')}</td></tr>`).join('')}
   </tbody></table></div>` : '<div class="vacio">Sin incumplimientos en el período.</div>'}</div>`;
 }
+
+// ---------- Dashboard ----------
+const cant = d => Math.max(1, parseInt(d.cantidad, 10) || 1);
+const enRango = (s, [desde, hasta]) => { const d = fecha(s); return !!d && d >= desde && d < hasta; };
+const contar = (l, f) => Object.entries(l.reduce((a, d) => { const k = f(d) || '—'; a[k] = (a[k] || 0) + cant(d); return a; }, {})).sort((a, b) => b[1] - a[1]);
+function barras(titulo, pares, ayuda) {
+  const max = Math.max(1, ...pares.map(p => p[1]));
+  return `<div class="card"><h2>${titulo}</h2>${ayuda ? `<p class="sub">${ayuda}</p>` : ''}${pares.length ? `<div class="barras">${pares.map(([l, n]) =>
+    `<div class="barra"><span class="bl" title="${esc(l)}">${esc(l)}</span><span class="bt"><span style="width:${Math.round(n / max * 100)}%"></span></span><b class="mono">${n}</b></div>`).join('')}</div>`
+    : '<div class="vacio">Sin datos en el período.</div>'}</div>`;
+}
+function vistaDashboard() {
+  const P = periodo(S.periodo), D = S.datos;
+  const incl = S.inclAnt !== false;
+  const base = D.devoluciones.filter(d => incl || d.origen !== 'App anterior');
+  const recib = base.filter(d => enRango(d.recibido_en, P));
+  const proc = base.filter(d => esProc(d) && enRango(d.procesado_en, P));
+  const k = kpiDts(P);
+  const abiertas = D.devoluciones.filter(abierta);
+  const venc = abiertas.filter(d => fecha(d.vence_sla) < ahoraChile()).length;
+  const sinEsc = D.esperadas.filter(e => e.etapa === 'entregada').length;
+  const tile = (n, l, alerta) => `<div class="tile ${alerta ? 'alert' : ''}" style="cursor:default"><div class="n">${n}</div><div class="l">${l}</div></div>`;
+  const reint = proc.filter(d => d.clasificacion === 'Reintegrable').reduce((a, d) => a + cant(d), 0);
+  return `<div><h1>Dashboard de devoluciones</h1><p class="sub">Volumen del período y estado actual. El DTS cuenta solo lo recibido en la app nueva.</p></div>
+  <div class="chips">${[['semana', 'Esta semana'], ['mes', 'Este mes'], ['mesAnt', 'Mes anterior'], ['30', 'Últimos 30 días']].map(([v, l]) => `<button class="chip" data-p="${v}" aria-pressed="${S.periodo === v}">${l}</button>`).join('')}
+    <button class="chip" id="inclAnt" aria-pressed="${incl}">Incluir app anterior</button></div>
+  <div class="tiles">
+    ${tile(recib.length, 'Recibidas en el período')}
+    ${tile(proc.length, 'Procesadas en el período')}
+    ${tile(reint, 'Unidades reintegrables (vuelven a stock)')}
+    ${tile(k.pct === null ? '—' : k.pct + '%', 'DTS del período')}
+    ${tile(abiertas.length, 'Hoy por procesar' + (venc ? ` · <b style="color:var(--err)">${venc} vencidas</b>` : ''), venc)}
+    ${tile(sinEsc, 'Entregadas por el marketplace sin escanear', sinEsc)}
+  </div>
+  <div class="grid2">
+    ${barras('Recibidas por marketplace', contar(recib, d => d.marketplace))}
+    ${barras('Procesadas por clasificación', contar(proc, d => d.clasificacion), 'Unidades. Reintegrable = vuelve a stock.')}
+    ${barras('Productos más devueltos', contar(recib, d => d.producto || d.sku).slice(0, 10))}
+    ${barras('Estado en que llegan', contar(proc, d => String(d.condicion || '').split(' / ')[0]).slice(0, 8))}
+    ${barras('Procesadas por persona', contar(proc, d => d.procesado_por))}
+  </div>
+  ${vistaDts(true)}`;
+}
+function ligarDashboard() {
+  ligarDts();
+  const b = $('#inclAnt'); if (b) b.onclick = () => { S.inclAnt = !(S.inclAnt !== false); render(); };
+}
+
+// ---------- Reportes ----------
+function periodoRp(p) {
+  const h = ahoraChile(); const d = new Date(h); d.setHours(0, 0, 0, 0);
+  if (p === 'hoy') return [d, new Date(h.getTime() + 864e5)];
+  if (p === '7') return [new Date(d.getTime() - 6 * 864e5), new Date(h.getTime() + 864e5)];
+  if (p === 'mes') return [new Date(h.getFullYear(), h.getMonth(), 1), new Date(h.getTime() + 864e5)];
+  if (p === 'todo') return [new Date(2000, 0, 1), new Date(h.getTime() + 864e5)];
+  return [new Date(d.getTime() - 29 * 864e5), new Date(h.getTime() + 864e5)];
+}
+function datosReporte() {
+  const F = S.rp = S.rp || { per: '30', mk: 'Todos', cl: 'Todas', q: '', ant: true };
+  const R = periodoRp(F.per), q = limpiar(F.q);
+  const filas = S.datos.devoluciones.filter(d => esProc(d) && enRango(d.procesado_en, R)
+    && (F.mk === 'Todos' || d.marketplace === F.mk) && (F.cl === 'Todas' || d.clasificacion === F.cl)
+    && (F.ant || d.origen !== 'App anterior')
+    && (!q || limpiar([d.sku, d.producto, d.orden, d.codigo_escaneado].join(' ')).includes(q)))
+    .sort((a, b) => (b.procesado_en || '').localeCompare(a.procesado_en || ''));
+  const porSku = {};
+  filas.forEach(d => {
+    const k = d.sku || '(sin SKU)';
+    const x = porSku[k] = porSku[k] || { sku: k, producto: d.producto || '', Reintegrable: 0, Reacondicionable: 0, Merma: 0, total: 0 };
+    if (!x.producto && d.producto) x.producto = d.producto;
+    if (x[d.clasificacion] !== undefined) x[d.clasificacion] += cant(d);
+    x.total += cant(d);
+  });
+  const resumen = Object.values(porSku).sort((a, b) => b.Reintegrable - a.Reintegrable || b.total - a.total);
+  return { F, filas, resumen };
+}
+function vistaReportes() {
+  const { F, filas, resumen } = datosReporte();
+  const chips = (grupo, ops) => ops.map(([v, l]) => `<button class="chip" data-rp="${grupo}" data-val="${v}" aria-pressed="${F[grupo] === v}">${l}</button>`).join('');
+  const tot = c => resumen.reduce((a, x) => a + x[c], 0);
+  const MAX = 300;
+  return `<div><h1>Reportes</h1><p class="sub">Devoluciones procesadas. El resumen por SKU muestra cuántas unidades vuelven a stock (Reintegrable).</p></div>
+  <div class="chips">${chips('per', [['hoy', 'Hoy'], ['7', '7 días'], ['30', '30 días'], ['mes', 'Este mes'], ['todo', 'Todo']])}</div>
+  <div class="chips">${chips('mk', [['Todos', 'Todos'], ...MARKETPLACES.map(m => [m, m])])}</div>
+  <div class="chips">${chips('cl', [['Todas', 'Todas'], ['Reintegrable', 'Reintegrable'], ['Reacondicionable', 'Reacondicionable'], ['Merma', 'Merma']])}
+    <button class="chip" id="rpAnt" aria-pressed="${F.ant}">Incluir app anterior</button></div>
+  <div class="fila"><label class="f esp">Buscar SKU, producto u orden<input id="rpq" value="${esc(F.q)}" autocomplete="off"></label>
+    <button class="btn nar" id="rpExcel" ${filas.length ? '' : 'disabled'}>⬇ Descargar Excel</button></div>
+  <div class="card"><h2>Resumen por SKU (${resumen.length})</h2>
+    <p class="sub">${filas.length} devoluciones · <b>${tot('Reintegrable')}</b> unidades reintegrables · ${tot('Reacondicionable')} reacondicionables · ${tot('Merma')} merma</p>
+    ${resumen.length ? `<div class="tbl"><table><thead><tr><th>SKU</th><th>Producto</th><th>Reintegrable</th><th>Reacondicionable</th><th>Merma</th><th>Total</th></tr></thead><tbody>
+    ${resumen.map(x => `<tr><td class="mono">${esc(x.sku)}</td><td>${esc(x.producto)}</td><td class="mono"><b>${x.Reintegrable || ''}</b></td><td class="mono">${x.Reacondicionable || ''}</td><td class="mono">${x.Merma || ''}</td><td class="mono">${x.total}</td></tr>`).join('')}
+    </tbody></table></div>` : '<div class="vacio">Sin devoluciones procesadas con estos filtros.</div>'}</div>
+  <div class="card"><h2>Detalle (${filas.length})</h2>${filas.length > MAX ? `<p class="sub">Se muestran las ${MAX} más recientes; el Excel trae todas.</p>` : ''}
+    ${filas.length ? `<div class="tbl"><table><thead><tr><th>Procesada</th><th>Marketplace</th><th>Orden</th><th>SKU</th><th>Producto</th><th>Estado</th><th>Clasificación</th><th>Acción</th><th>Por</th></tr></thead><tbody>
+    ${filas.slice(0, MAX).map(d => `<tr><td class="mono">${corta(d.procesado_en)}</td><td>${esc(d.marketplace)}</td><td class="mono">${esc(d.orden)}</td><td class="mono">${esc(d.sku)}</td><td>${esc(d.producto)}</td><td>${esc(d.condicion)}</td><td>${esc(d.clasificacion)}</td><td>${esc(d.accion_mkp)}</td><td>${esc(d.procesado_por)}${d.origen === 'App anterior' ? ' <span class="pill p-gris">app anterior</span>' : ''}</td></tr>`).join('')}
+    </tbody></table></div>` : '<div class="vacio">Sin datos.</div>'}</div>`;
+}
+function ligarReportes() {
+  document.querySelectorAll('[data-rp]').forEach(b => b.onclick = () => { S.rp[b.dataset.rp] = b.dataset.val; render(); });
+  $('#rpAnt').onclick = () => { S.rp.ant = !S.rp.ant; render(); };
+  const q = $('#rpq');
+  q.oninput = () => { S.rp.q = q.value; const pos = q.selectionStart; render(); const n = $('#rpq'); n.focus(); n.setSelectionRange(pos, pos); };
+  $('#rpExcel').onclick = descargarExcel;
+}
+function cargarScript(src) {
+  return new Promise((ok, mal) => { const sc = document.createElement('script'); sc.src = src; sc.onload = ok; sc.onerror = () => mal(new Error('No se pudo cargar el generador de Excel')); document.head.appendChild(sc); });
+}
+async function descargarExcel() {
+  const b = $('#rpExcel'); b.disabled = true; b.textContent = 'Generando…';
+  try {
+    if (!window.XLSX) await cargarScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+    const { F, filas, resumen } = datosReporte();
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(resumen.map(x => ({
+      SKU: x.sku, Producto: x.producto, Reintegrable: x.Reintegrable, Reacondicionable: x.Reacondicionable, Merma: x.Merma, Total: x.total }))), 'Resumen por SKU');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filas.map(d => ({
+      'Procesada': d.procesado_en, 'Recibida': d.recibido_en, 'Marketplace': d.marketplace, 'Orden': d.orden, 'SKU': d.sku, 'Producto': d.producto,
+      'Cantidad': cant(d), 'Tipo': TIPOS[d.tipo] || d.tipo || '', 'Motivo cliente': d.motivo, 'Estado del producto': d.condicion, 'Clasificación': d.clasificacion,
+      'Acción marketplace': d.accion_mkp, 'Dentro de plazo': d.dentro_sla, 'Horas hábiles': d.horas_proceso, 'Recibido por': d.recibido_por,
+      'Procesado por': d.procesado_por, 'Verificación marketplace': d.verif_mkp, 'Comentario': d.comentario, 'Fotos': d.fotos, 'Origen': d.origen || 'App nueva' }))), 'Detalle');
+    const h = ahoraChile(), p2 = n => String(n).padStart(2, '0');
+    XLSX.writeFile(wb, `devoluciones_procesadas_${h.getFullYear()}-${p2(h.getMonth() + 1)}-${p2(h.getDate())}.xlsx`);
+    b.textContent = '⬇ Descargar Excel';
+  } catch (e) { S.aviso = { t: 'err', m: e.message }; render(); return; }
+  b.disabled = false;
+}
+
 function ligarDts() { document.querySelectorAll('[data-p]').forEach(b => b.onclick = () => { S.periodo = b.dataset.p; render(); }); }
 
 // arranque
