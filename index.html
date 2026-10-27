@@ -107,7 +107,7 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 // ====== CONFIGURACIÓN: pega aquí la URL /exec del Apps Script publicado ======
-const VERSION = '2026.10.27-1';
+const VERSION = '2026.10.27-2';
 const API_URL = 'https://script.google.com/macros/s/AKfycbxYHuQd_UwrjCn3LQ0Y_q35DRnTWrO-Yx3UI8MLodUQFWnZaXGCi_zgbD1rwylW-f7k/exec';
 // ============================================================================
 
@@ -252,7 +252,8 @@ function coincide(tok, codigos) {
 function buscar(texto) {
   const toks = tokens(texto);
   const D = S.datos;
-  const dev = D.devoluciones.find(d => toks.some(t => coincide(t, String(d.codigo_escaneado || '').split(/\s+/).concat([d.orden]).map(limpiar))));
+  const devs = D.devoluciones.filter(d => toks.some(t => coincide(t, String(d.codigo_escaneado || '').split(/\s+/).concat([d.orden]).map(limpiar))));
+  const dev = devs.find(abierta) || devs.find(d => d.origen !== 'App anterior') || devs[0];
   if (dev) return { dev };
   const esp = D.esperadas.find(e => toks.some(t => coincide(t, String(e.codigos || '').split('|').concat([e.orden]).map(limpiar))));
   if (esp) return { esp };
@@ -561,6 +562,8 @@ function ligarPendientes() {
 // procesar
 function abrirProceso(id) {
   S.vista = 'procesar'; S.aviso = null;
+  const dd = S.datos.devoluciones.find(x => x.id === id);
+  if (dd && esProc(dd)) S.aviso = { t: 'warn', m: `Esta devolución ya fue procesada${dd.origen === 'App anterior' ? ' en la app anterior' : ''} el ${corta(dd.procesado_en)} por ${dd.procesado_por}. Solo falta gestionarla en el marketplace si no se hizo.` };
   S.sel = { id };
   const d = S.datos.devoluciones.find(x => x.id === id);
   const sug = d && d.tipo === 'no_entregada' ? 'Sin acción' : '';
@@ -569,7 +572,7 @@ function abrirProceso(id) {
 }
 function vistaProcesar() {
   const D = S.datos;
-  if (S.sel && S.sel.id) return formProceso(D.devoluciones.find(x => x.id === S.sel.id));
+  if (S.sel && S.sel.id) return escaner('scP', 'Escanear la siguiente etiqueta o EAN') + formProceso(D.devoluciones.find(x => x.id === S.sel.id));
   const FP = S.filtroProd;
   const cola = D.devoluciones.filter(d => abierta(d) && (!FP || FP.skus.includes(d.sku))).sort((a, b) => fecha(a.vence_sla) - fecha(b.vence_sla));
   const hechas = D.devoluciones.filter(esProc).sort((a, b) => (b.procesado_en || '').localeCompare(a.procesado_en || '')).slice(0, 10);
@@ -629,8 +632,8 @@ function ligarCopiar() {
   });
 }
 function ligarProcesar() {
-  if (!S.sel) {
-    ligarEscaner('scP', txt => {
+  ligarEscaner('scP', txt => {
+      if (S.form && (S.form.condicion || S.form.fotos.length) && !confirm('¿Dejar esta devolución sin guardar y pasar a la siguiente?')) return;
       const r = buscar(txt);
       if (r.dev) return abrirProceso(r.dev.id);
       if (r.prod) {
@@ -643,7 +646,8 @@ function ligarProcesar() {
       // No está en la app: se busca en línea y, si aparece, se ofrece recibirla.
       S.vista = 'recibir';
       return buscarEnLinea(txt, 'procesar');
-    });
+  });
+  if (!S.sel) {
     document.querySelectorAll('[data-dev]').forEach(b => b.onclick = () => abrirProceso(b.dataset.dev));
     const q = $('#quitarFP'); if (q) q.onclick = e => { e.preventDefault(); S.filtroProd = null; render(); };
     return;
