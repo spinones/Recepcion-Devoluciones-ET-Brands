@@ -113,7 +113,7 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 // ====== CONFIGURACIÓN: pega aquí la URL /exec del Apps Script publicado ======
-const VERSION = '2026.10.27-4';
+const VERSION = '2026.10.28-1';
 const API_URL = 'https://script.google.com/macros/s/AKfycbxYHuQd_UwrjCn3LQ0Y_q35DRnTWrO-Yx3UI8MLodUQFWnZaXGCi_zgbD1rwylW-f7k/exec';
 // ============================================================================
 
@@ -387,10 +387,10 @@ function vistaInicio() {
   const vencidasLista = enEt.filter(d => d.estado === 'Vencida sin procesar' || fecha(d.vence_sla) < ahoraChile());
   const conRetraso = D.devoluciones.filter(d => d.estado === 'Procesada con retraso' && fecha(d.procesado_en) > new Date(ahoraChile() - 7 * 864e5));
   const enCamino = D.esperadas.filter(e => e.etapa === 'en_camino').length;
-  const bloque = (titulo, ayuda, items, fn, tono) => `<div class="card"><div class="fila"><h2 class="esp">${titulo}</h2><span class="pill ${items.length ? tono : 'p-ok'}">${items.length}</span></div>
-    <p class="sub">${ayuda}</p>${items.length ? `<div class="lista">${items.slice(0, 8).map(fn).join('')}</div>${items.length > 8 ? `<p class="sub">y ${items.length - 8} más</p>` : ''}` : '<div class="vacio">Nada pendiente.</div>'}</div>`;
-  const foco = bloque('Plazo del marketplace vence hoy', 'Aceptar, apelar o revisar hoy en el portal. Las Full no llegan a la bodega: solo se gestionan.', plazoHoy, itemEsp, 'p-err')
-    + bloque('Entregadas y sin escanear', 'El marketplace dice que ya llegaron a la bodega. Búscalas y recíbelas.', sinEscanear, itemEsp, 'p-err')
+  const bloque = (titulo, ayuda, items, fn, tono, max = 8) => `<div class="card"><div class="fila"><h2 class="esp">${titulo}</h2><span class="pill ${items.length ? tono : 'p-ok'}">${items.length}</span></div>
+    <p class="sub">${ayuda}</p>${items.length ? `<div class="lista">${items.slice(0, max).map(fn).join('')}</div>${items.length > max ? `<p class="sub">y ${items.length - max} más</p>` : ''}` : '<div class="vacio">Nada pendiente.</div>'}</div>`;
+  const foco = bloque('Plazo del marketplace vence hoy', 'Escanéala en Recepción si está en bodega. Si no corresponde recibirla (Full) o no se encuentra, bájala con los botones.', plazoHoy, itemEspGestion, 'p-err', 999)
+    + bloque('Entregadas y sin escanear', 'El marketplace dice que ya llegaron a la bodega. Búscalas y recíbelas; si no aparecen, márcalas.', sinEscanear.sort((a, b) => fecha(a.entregada_en || a.fecha_inicio) - fecha(b.entregada_en || b.fecha_inicio)), itemEspGestion, 'p-err', 30)
     + bloque('Vencidas sin procesar', 'Pasó el plazo de 1 día hábil y siguen sin procesar. Cuentan como incumplimiento del DTS.', vencidasLista, itemDev, 'p-err')
     + bloque('En ET Brands: se cierran hoy', 'Recibidas que deben procesarse antes de que termine el día.', cierranHoy.filter(d => d.estado === 'En ET Brands'), itemDev, 'p-warn')
     + bloque('Procesadas con retraso (últimos 7 días)', 'Se procesaron después del plazo.', conRetraso, itemDev, 'p-warn');
@@ -406,7 +406,29 @@ function vistaInicio() {
   ${foco}
   <div class="card"><h2>Por procesar, próximas a vencer</h2>${cola.length ? `<div class="lista">${cola.map(itemDev).join('')}</div>` : '<div class="vacio">No hay devoluciones por procesar.</div>'}</div>`;
 }
-function ligarInicio() { document.querySelectorAll('[data-dev]').forEach(b => b.onclick = () => abrirProceso(b.dataset.dev)); ligarEsp(); }
+function ligarInicio() {
+  document.querySelectorAll('[data-dev]').forEach(b => b.onclick = () => abrirProceso(b.dataset.dev));
+  ligarEsp();
+  document.querySelectorAll('[data-gest]').forEach(b => b.onclick = async ev => {
+    ev.stopPropagation();
+    const e = S.datos.esperadas.find(x => x.id === b.dataset.gest);
+    const motivo = b.dataset.mot;
+    if (!e || !confirm(`${motivo}\n\n${e.producto || e.sku} · orden ${e.orden}\n\nSe quitará del panel y quedará registrado a tu nombre.`)) return;
+    b.disabled = true;
+    try {
+      const j = await api('gestionar', { id: e.id, motivo });
+      if (!j.ok) throw new Error(j.error);
+      S.datos.esperadas = S.datos.esperadas.filter(x => x.id !== e.id);
+      S.aviso = { t: 'ok', m: `Orden ${e.orden}: ${motivo}` };
+    } catch (err) { S.aviso = { t: 'err', m: err.message }; }
+    render();
+  });
+}
+function itemEspGestion(e) {
+  return itemEsp(e).replace(/<\/div>$/, `<div class="fila" style="margin-top:6px;gap:6px">
+    <button class="btn esp" style="padding:6px 8px;font-size:13px" data-gest="${esc(e.id)}" data-mot="Gestionada en el portal">✓ Gestionada en portal</button>
+    <button class="btn esp" style="padding:6px 8px;font-size:13px" data-gest="${esc(e.id)}" data-mot="No está en bodega">✗ No está en bodega</button></div></div>`);
+}
 function ligarEsp() {
   document.querySelectorAll('[data-esp]').forEach(b => b.onclick = () => {
     const e = S.datos.esperadas.find(x => x.id === b.dataset.esp);
@@ -427,6 +449,7 @@ function itemEsp(e) {
     <div class="r1"><span class="prod">${esc(e.producto || e.sku || 'Sin detalle')}</span><span class="pill ${e.etapa === 'entregada' ? 'p-err' : e.tipo === 'no_entregada' ? 'p-gris' : 'p-nar'}">${esc(ETAPAS[e.etapa] || TIPOS[e.tipo] || '')}</span></div>
     ${e.plazo_mkp ? `<div class="meta" style="color:${venceHoy(e.plazo_mkp) ? 'var(--err)' : 'var(--gris)'};font-weight:600">Plazo marketplace: ${corta(e.plazo_mkp)} · ${restante(e.plazo_mkp).txt}</div>` : ''}
     ${e.estado_mkp ? `<div class="meta">${esc(e.estado_mkp)}</div>` : ''}
+    ${e.entregada_en ? `<div class="meta" style="font-weight:600">📦 Entregada en bodega según ${esc(e.marketplace)}: ${corta(e.entregada_en)}${e.etapa === 'entregada' ? ` · hace ${Math.max(0, Math.floor((ahoraChile() - fecha(e.entregada_en)) / 864e5))} d` : ''}</div>` : ''}
     <div class="meta">${esc(e.marketplace)} · ${esc(TIPOS[e.tipo] || '')} · orden ${esc(e.orden)} · ${esc(e.sku)}${e.motivo ? ' · ' + esc(e.motivo) : ''}</div>
     <div class="meta mono">${esc(String(e.codigos || '').split('|').join(' · '))}${dias !== null ? ` · hace ${dias} d` : ''}</div></div>`;
 }
