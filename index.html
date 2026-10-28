@@ -113,7 +113,7 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 // ====== CONFIGURACIÓN: pega aquí la URL /exec del Apps Script publicado ======
-const VERSION = '2026.10.28-1';
+const VERSION = '2026.10.28-2';
 const API_URL = 'https://script.google.com/macros/s/AKfycbxYHuQd_UwrjCn3LQ0Y_q35DRnTWrO-Yx3UI8MLodUQFWnZaXGCi_zgbD1rwylW-f7k/exec';
 // ============================================================================
 
@@ -318,10 +318,10 @@ function render() {
   const app = $('#app');
   if (!S.token) { app.innerHTML = vistaLogin(); ligarLogin(); return; }
   if (!S.datos) { app.innerHTML = cabecera() + `<main><div class="vacio">Cargando…</div></main>`; cargar(); return; }
-  const v = { inicio: vistaInicio, recibir: vistaRecibir, pendientes: vistaPendientes, procesar: vistaProcesar, dts: vistaDashboard, reportes: vistaReportes }[S.vista];
+  const v = { inicio: vistaInicio, control: vistaControl, recibir: vistaRecibir, pendientes: vistaPendientes, procesar: vistaProcesar, dts: vistaDashboard, reportes: vistaReportes }[S.vista];
   app.innerHTML = cabecera() + nav() + `<main>${S.aviso ? `<div class="msg ${S.aviso.t}" role="status">${esc(S.aviso.m)}</div>` : ''}${v()}</main>`;
   ligarComun();
-  ({ inicio: ligarInicio, recibir: ligarRecibir, pendientes: ligarPendientes, procesar: ligarProcesar, dts: ligarDashboard, reportes: ligarReportes }[S.vista])();
+  ({ inicio: ligarInicio, control: ligarControl, recibir: ligarRecibir, pendientes: ligarPendientes, procesar: ligarProcesar, dts: ligarDashboard, reportes: ligarReportes }[S.vista])();
 }
 
 function cabecera() {
@@ -333,7 +333,7 @@ function cabecera() {
 function nav() {
   const D = S.datos;
   const porProcesar = D.devoluciones.filter(abierta).length;
-  const items = [['inicio', '🏠', 'Inicio'], ['recibir', '📦', 'Recepción', D.esperadas.length], ['pendientes', '🕓', 'Por recibir'], ['procesar', '🔍', 'Procesar', porProcesar], ['dts', '📊', 'Dashboard'], ['reportes', '📋', 'Reportes']];
+  const items = [['inicio', '🏠', 'Inicio'], ['control', '🎯', 'Control'], ['recibir', '📦', 'Recepción', D.esperadas.length], ['pendientes', '🕓', 'Por recibir'], ['procesar', '🔍', 'Procesar', porProcesar], ['dts', '📊', 'Dashboard'], ['reportes', '📋', 'Reportes']];
   return `<nav class="tabs">${items.map(([k, ic, l, b]) => `<button data-v="${k}" ${S.vista === k ? 'aria-current="page"' : ''}><span class="ic">${ic}</span>${l}${k === 'procesar' && b ? `<span class="badge">${b}</span>` : ''}</button>`).join('')}</nav>`;
 }
 function ligarComun() {
@@ -452,6 +452,62 @@ function itemEsp(e) {
     ${e.entregada_en ? `<div class="meta" style="font-weight:600">📦 Entregada en bodega según ${esc(e.marketplace)}: ${corta(e.entregada_en)}${e.etapa === 'entregada' ? ` · hace ${Math.max(0, Math.floor((ahoraChile() - fecha(e.entregada_en)) / 864e5))} d` : ''}</div>` : ''}
     <div class="meta">${esc(e.marketplace)} · ${esc(TIPOS[e.tipo] || '')} · orden ${esc(e.orden)} · ${esc(e.sku)}${e.motivo ? ' · ' + esc(e.motivo) : ''}</div>
     <div class="meta mono">${esc(String(e.codigos || '').split('|').join(' · '))}${dias !== null ? ` · hace ${dias} d` : ''}</div></div>`;
+}
+
+// control: qué falta hoy y en qué estado está cada una (para el supervisor)
+function filasControl() {
+  const D = S.datos, ahora = ahoraChile(), desde = new Date(ahora - 3 * 864e5);
+  const filas = [];
+  D.esperadas.forEach(e => {
+    const plazo = fecha(e.plazo_mkp);
+    const hoy = plazo && plazo <= finDeHoy() && plazo >= desde;
+    const atrasada = e.etapa === 'entregada' && fecha(e.entregada_en || e.fecha_inicio) < new Date(ahora - 864e5);
+    if (!hoy && !atrasada) return;
+    let paso, tono;
+    if (e.etapa === 'entregada') { paso = `Llegó a bodega${e.entregada_en ? ' ' + corta(e.entregada_en) : ''} · NO escaneada`; tono = 'err'; }
+    else if (e.etapa === 'full') { paso = 'Full: gestionar en el portal'; tono = 'warn'; }
+    else if (e.etapa === 'en_camino') { paso = 'En camino · no ha llegado'; tono = 'gris'; }
+    else { paso = ETAPAS[e.etapa] || e.estado_mkp || 'Sin estado'; tono = 'gris'; }
+    filas.push({ id: e.id, esp: true, plazo: e.plazo_mkp, vencido: plazo && plazo < ahora, mk: e.marketplace, orden: e.orden, sku: e.sku, prod: e.producto, paso, tono });
+  });
+  D.devoluciones.filter(d => abierta(d) && venceHoy(d.vence_sla)).forEach(d => {
+    filas.push({ id: d.id, esp: false, plazo: d.vence_sla, vencido: fecha(d.vence_sla) < ahora, mk: d.marketplace, orden: d.orden || d.codigo_escaneado, sku: d.sku, prod: d.producto,
+      paso: `Escaneada ${corta(d.recibido_en)} por ${(d.recibido_por || '').split(' ')[0]} · falta procesar`, tono: 'warn' });
+  });
+  const orden = { err: 0, warn: 1, gris: 2 };
+  return filas.sort((a, b) => orden[a.tono] - orden[b.tono] || (fecha(a.plazo) || 0) - (fecha(b.plazo) || 0));
+}
+function vistaControl() {
+  const D = S.datos, filas = filasControl();
+  const hoyTxt = String(D.ahora).slice(0, 10);
+  const procHoy = D.devoluciones.filter(d => esProc(d) && String(d.procesado_en).slice(0, 10) === hoyTxt && d.origen !== 'App anterior').length;
+  const recHoy = D.devoluciones.filter(d => String(d.recibido_en).slice(0, 10) === hoyTxt && d.origen !== 'App anterior').length;
+  const n = t => filas.filter(f => f.tono === t).length;
+  return `<div><h1>Control del día</h1><p class="sub">Todo lo que vence hoy (o ya llegó y no se ha movido) y en qué paso está. Actualizado ${corta(D.ahora)}</p></div>
+  <div class="tiles">
+    <div class="tile ${n('err') ? 'alert' : ''}"><div class="n">${n('err')}</div><div class="l">Llegaron y NO están escaneadas</div></div>
+    <div class="tile"><div class="n">${n('warn')}</div><div class="l">Escaneadas / Full, falta procesar o gestionar</div></div>
+    <div class="tile"><div class="n">${n('gris')}</div><div class="l">Vencen hoy pero aún no llegan</div></div>
+    <div class="tile"><div class="n">${recHoy} / ${procHoy}</div><div class="l">Recibidas / procesadas hoy en la app</div></div>
+  </div>
+  <div class="fila"><button class="btn nar esp" id="copiarControl">📋 Copiar lista para WhatsApp</button></div>
+  <div class="card">${filas.length ? `<div class="lista">${filas.map(f => `<div class="item s-${f.tono === 'gris' ? '' : f.tono}" ${f.esp ? `data-esp="${esc(f.id)}"` : `data-dev="${esc(f.id)}"`} role="button" tabindex="0">
+    <div class="r1"><span class="prod">${esc(f.prod || f.sku || 'Sin detalle')}</span><span class="pill p-${f.tono}">${esc(f.paso)}</span></div>
+    <div class="meta">${esc(f.mk)} · orden <b class="mono">${esc(f.orden)}</b> · ${esc(f.sku)}</div>
+    ${f.plazo ? `<div class="meta" style="font-weight:600;color:${f.vencido ? 'var(--err)' : 'var(--texto)'}">${f.esp ? 'Plazo marketplace' : 'Plazo SLA'}: ${corta(f.plazo)} · ${restante(f.plazo).txt}</div>` : ''}</div>`).join('')}</div>` : '<div class="vacio">Nada pendiente para hoy.</div>'}</div>`;
+}
+function ligarControl() {
+  document.querySelectorAll('[data-dev]').forEach(b => b.onclick = () => abrirProceso(b.dataset.dev));
+  ligarEsp();
+  $('#copiarControl').onclick = async () => {
+    const filas = filasControl(), hora = s => s ? corta(s) : 'sin plazo';
+    const grupo = (t, titulo) => { const g = filas.filter(f => f.tono === t); return g.length ? `*${titulo}* (${g.length})\n` + g.map(f => `• ${f.mk} ${f.orden} · ${f.sku} · ${f.prod || ''} · vence ${hora(f.plazo)}${f.vencido ? ' (VENCIDA)' : ''}`).join('\n') + '\n\n' : ''; };
+    const txt = `Devoluciones pendientes ${corta(S.datos.ahora)}\n\n` + grupo('err', 'Llegaron a bodega y NO están escaneadas: buscarlas y escanearlas')
+      + grupo('warn', 'Escaneadas o Full: procesar / gestionar hoy') + grupo('gris', 'Vencen hoy y no han llegado: avisar si aparecen');
+    try { await navigator.clipboard.writeText(txt.trim()); S.aviso = { t: 'ok', m: 'Lista copiada. Pégala en WhatsApp.' }; }
+    catch (e) { prompt('Copia la lista:', txt.trim()); }
+    render();
+  };
 }
 
 // recepción
