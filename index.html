@@ -113,7 +113,7 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 // ====== CONFIGURACIÓN: pega aquí la URL /exec del Apps Script publicado ======
-const VERSION = '2026.10.28-2';
+const VERSION = '2026.10.28-3';
 const API_URL = 'https://script.google.com/macros/s/AKfycbxYHuQd_UwrjCn3LQ0Y_q35DRnTWrO-Yx3UI8MLodUQFWnZaXGCi_zgbD1rwylW-f7k/exec';
 // ============================================================================
 
@@ -456,11 +456,13 @@ function itemEsp(e) {
 
 // control: qué falta hoy y en qué estado está cada una (para el supervisor)
 function filasControl() {
-  const D = S.datos, ahora = ahoraChile(), desde = new Date(ahora - 3 * 864e5);
+  // Solo lo que todavía se puede salvar: lo vencido no se muestra.
+  const D = S.datos, ahora = ahoraChile();
   const filas = [];
   D.esperadas.forEach(e => {
     const plazo = fecha(e.plazo_mkp);
-    const hoy = plazo && plazo <= finDeHoy() && plazo >= desde;
+    if (plazo && plazo < ahora) return;
+    const hoy = plazo && plazo <= finDeHoy();
     const atrasada = e.etapa === 'entregada' && fecha(e.entregada_en || e.fecha_inicio) < new Date(ahora - 864e5);
     if (!hoy && !atrasada) return;
     let paso, tono;
@@ -470,7 +472,7 @@ function filasControl() {
     else { paso = ETAPAS[e.etapa] || e.estado_mkp || 'Sin estado'; tono = 'gris'; }
     filas.push({ id: e.id, esp: true, plazo: e.plazo_mkp, vencido: plazo && plazo < ahora, mk: e.marketplace, orden: e.orden, sku: e.sku, prod: e.producto, paso, tono });
   });
-  D.devoluciones.filter(d => abierta(d) && venceHoy(d.vence_sla)).forEach(d => {
+  D.devoluciones.filter(d => abierta(d) && venceHoy(d.vence_sla) && fecha(d.vence_sla) >= ahora).forEach(d => {
     filas.push({ id: d.id, esp: false, plazo: d.vence_sla, vencido: fecha(d.vence_sla) < ahora, mk: d.marketplace, orden: d.orden || d.codigo_escaneado, sku: d.sku, prod: d.producto,
       paso: `Escaneada ${corta(d.recibido_en)} por ${(d.recibido_por || '').split(' ')[0]} · falta procesar`, tono: 'warn' });
   });
@@ -483,7 +485,7 @@ function vistaControl() {
   const procHoy = D.devoluciones.filter(d => esProc(d) && String(d.procesado_en).slice(0, 10) === hoyTxt && d.origen !== 'App anterior').length;
   const recHoy = D.devoluciones.filter(d => String(d.recibido_en).slice(0, 10) === hoyTxt && d.origen !== 'App anterior').length;
   const n = t => filas.filter(f => f.tono === t).length;
-  return `<div><h1>Control del día</h1><p class="sub">Todo lo que vence hoy (o ya llegó y no se ha movido) y en qué paso está. Actualizado ${corta(D.ahora)}</p></div>
+  return `<div><h1>Control del día</h1><p class="sub">Lo que vence hoy y todavía se puede gestionar (o ya llegó y no se ha movido), y en qué paso está. Lo vencido no aparece. Actualizado ${corta(D.ahora)}</p></div>
   <div class="tiles">
     <div class="tile ${n('err') ? 'alert' : ''}"><div class="n">${n('err')}</div><div class="l">Llegaron y NO están escaneadas</div></div>
     <div class="tile"><div class="n">${n('warn')}</div><div class="l">Escaneadas / Full, falta procesar o gestionar</div></div>
@@ -501,7 +503,7 @@ function ligarControl() {
   ligarEsp();
   $('#copiarControl').onclick = async () => {
     const filas = filasControl(), hora = s => s ? corta(s) : 'sin plazo';
-    const grupo = (t, titulo) => { const g = filas.filter(f => f.tono === t); return g.length ? `*${titulo}* (${g.length})\n` + g.map(f => `• ${f.mk} ${f.orden} · ${f.sku} · ${f.prod || ''} · vence ${hora(f.plazo)}${f.vencido ? ' (VENCIDA)' : ''}`).join('\n') + '\n\n' : ''; };
+    const grupo = (t, titulo) => { const g = filas.filter(f => f.tono === t); return g.length ? `*${titulo}* (${g.length})\n` + g.map(f => `• ${f.mk} ${f.orden} · ${f.sku} · ${f.prod || ''} · vence ${hora(f.plazo)}`).join('\n') + '\n\n' : ''; };
     const txt = `Devoluciones pendientes ${corta(S.datos.ahora)}\n\n` + grupo('err', 'Llegaron a bodega y NO están escaneadas: buscarlas y escanearlas')
       + grupo('warn', 'Escaneadas o Full: procesar / gestionar hoy') + grupo('gris', 'Vencen hoy y no han llegado: avisar si aparecen');
     try { await navigator.clipboard.writeText(txt.trim()); S.aviso = { t: 'ok', m: 'Lista copiada. Pégala en WhatsApp.' }; }
