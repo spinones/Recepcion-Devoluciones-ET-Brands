@@ -113,7 +113,7 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 // ====== CONFIGURACIÓN: pega aquí la URL /exec del Apps Script publicado ======
-const VERSION = '2026.10.30-1';
+const VERSION = '2026.10.30-2';
 const API_URL = 'https://script.google.com/macros/s/AKfycbxYHuQd_UwrjCn3LQ0Y_q35DRnTWrO-Yx3UI8MLodUQFWnZaXGCi_zgbD1rwylW-f7k/exec';
 // ============================================================================
 
@@ -122,7 +122,8 @@ const PORTALES = {
   'Falabella': 'https://sellercenter.falabella.com/order/return',
   'Ripley': 'https://sellercenter.ripleylabs.com/incidence/returns',
   'Paris': 'https://marketplace.paris.cl/es/seller/sales/returns',
-  'Walmart': 'https://seller.walmart.com/orders/returns'
+  'Walmart': 'https://seller.walmart.com/orders/returns',
+  'Shopify Zeker': 'https://admin.shopify.com/store/zeker-cl/orders'
 };
 const MARKETPLACES = Object.keys(PORTALES);
 const TIPOS = { comprador: 'Devolución del cliente', no_entregada: 'No entregada' };
@@ -555,6 +556,7 @@ function vistaRecibir() {
   } else if (sel && sel.nada) {
     res = sel.buscando ? `<div class="card"><div class="msg warn">Buscando "${esc(sel.codigo)}" en los marketplaces…</div></div>` : `<div class="card"><div class="msg warn">"${esc(sel.codigo)}" no está en las devoluciones esperadas ni en los marketplaces.</div>
       <p class="sub"><b>Escanea otra etiqueta del mismo paquete.</b> Las de 99minutos u otros couriers suelen traer debajo la etiqueta original de Mercado Libre o del marketplace. También sirve escribir el número de venta u orden (Ripley lo imprime arriba, ej. 25271009801-A). La app guarda ambos códigos.</p>
+      <p class="sub"><b>Bluexpress de Walmart:</b> escribe el número de <b>REFERENCIA</b> (arriba, ej. 8472648002294). <b>Bluexpress de Zeker:</b> escribe el Nº de pedido de la web (ej. 1162). <b>Etiqueta amarilla de Full:</b> escribe el "ID do pedido" (ej. 2000018727664518).</p>
       <p class="sub">Si ninguna etiqueta aparece, recíbela como no identificada: se une sola cuando el marketplace la informe.</p>
       <button class="btn sec" id="otroPaquete">Es otro paquete: empezar de nuevo</button>
       <label class="f">Marketplace<select id="nMk"><option value="">Elegir…</option>${MARKETPLACES.map(m => `<option>${m}</option>`).join('')}</select></label>
