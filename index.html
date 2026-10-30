@@ -113,7 +113,7 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 // ====== CONFIGURACIÓN: pega aquí la URL /exec del Apps Script publicado ======
-const VERSION = '2026.10.30-3';
+const VERSION = '2026.10.30-4';
 const API_URL = 'https://script.google.com/macros/s/AKfycbxYHuQd_UwrjCn3LQ0Y_q35DRnTWrO-Yx3UI8MLodUQFWnZaXGCi_zgbD1rwylW-f7k/exec';
 // ============================================================================
 
@@ -482,15 +482,15 @@ function vistaActividad() {
   // Mapa del día: hora × cuarto de hora.
   const q = {}; delDia.forEach(f => { const k = f[1] + '-' + Math.floor(f[2] / 15); q[k] = (q[k] || 0) + 1; });
   const maxQ = Math.max(1, ...Object.values(q));
-  const mapaDia = `<table style="border-spacing:3px;width:100%"><tr><th></th>${[':00', ':15', ':30', ':45'].map(x => `<th class="sub" style="font-weight:600">${x}</th>`).join('')}<th class="sub">Total</th></tr>
+  const mapaDia = `<div style="overflow-x:auto"><table style="border-spacing:3px;width:100%"><tr><th></th>${[':00', ':15', ':30', ':45'].map(x => `<th style="font-size:12px;color:var(--gris);font-weight:600">${x}</th>`).join('')}<th style="font-size:12px;color:var(--gris);font-weight:600">Total</th></tr>
     ${HORAS_ACT.map(h => { const tot = [0, 1, 2, 3].reduce((s, k) => s + (q[h + '-' + k] || 0), 0);
-      return `<tr><th class="sub" style="text-align:right;padding-right:6px">${h}:00</th>${[0, 1, 2, 3].map(k => celdaCalor(q[h + '-' + k] || 0, maxQ, `${h}:${String(k * 15).padStart(2, '0')} · ${q[h + '-' + k] || 0} acciones`)).join('')}<td class="sub" style="text-align:center">${tot || '—'}</td></tr>`; }).join('')}</table>`;
+      return `<tr><th style="font-size:12px;color:var(--gris);font-weight:600;text-align:right;padding-right:6px">${h}:00</th>${[0, 1, 2, 3].map(k => celdaCalor(q[h + '-' + k] || 0, maxQ, `${h}:${String(k * 15).padStart(2, '0')} · ${q[h + '-' + k] || 0} acciones`)).join('')}<td style="font-size:12px;color:var(--gris);text-align:center">${tot || '—'}</td></tr>`; }).join('')}</table></div>`;
   // Mapa de la semana: día × hora.
   const s = {}; mias.forEach(f => { const k = f[0] + '-' + f[1]; s[k] = (s[k] || 0) + 1; });
   const maxS = Math.max(1, ...Object.values(s));
   const dsem = d => ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'][new Date(d + 'T12:00:00').getDay()] + ' ' + d.slice(8, 10) + '-' + d.slice(5, 7);
-  const mapaSem = `<div style="overflow-x:auto"><table style="border-spacing:3px"><tr><th></th>${HORAS_ACT.map(h => `<th class="sub" style="font-weight:600">${h}</th>`).join('')}</tr>
-    ${dias.map(d => `<tr><th class="sub" style="text-align:right;padding-right:6px;white-space:nowrap">${dsem(d)}</th>${HORAS_ACT.map(h => celdaCalor(s[d + '-' + h] || 0, maxS, `${dsem(d)} ${h}:00 · ${s[d + '-' + h] || 0} acciones`)).join('')}</tr>`).join('')}</table></div>`;
+  const mapaSem = `<div style="overflow-x:auto"><table style="border-spacing:3px"><tr><th></th>${HORAS_ACT.map(h => `<th style="font-size:12px;color:var(--gris);font-weight:600">${h}</th>`).join('')}</tr>
+    ${dias.map(d => `<tr><th style="font-size:12px;color:var(--gris);font-weight:600;text-align:right;padding-right:6px;white-space:nowrap">${dsem(d)}</th>${HORAS_ACT.map(h => celdaCalor(s[d + '-' + h] || 0, maxS, `${dsem(d)} ${h}:00 · ${s[d + '-' + h] || 0} acciones`)).join('')}</tr>`).join('')}</table></div>`;
   // Estadísticas del día.
   const min = f => f[1] * 60 + f[2], hm = m => `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
   const t = delDia.map(min).sort((a, b) => a - b);
