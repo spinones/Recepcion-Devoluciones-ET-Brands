@@ -113,7 +113,7 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 // ====== CONFIGURACIÓN: pega aquí la URL /exec del Apps Script publicado ======
-const VERSION = '2026.10.30-2';
+const VERSION = '2026.10.30-3';
 const API_URL = 'https://script.google.com/macros/s/AKfycbxYHuQd_UwrjCn3LQ0Y_q35DRnTWrO-Yx3UI8MLodUQFWnZaXGCi_zgbD1rwylW-f7k/exec';
 // ============================================================================
 
@@ -319,10 +319,11 @@ function render() {
   const app = $('#app');
   if (!S.token) { app.innerHTML = vistaLogin(); ligarLogin(); return; }
   if (!S.datos) { app.innerHTML = cabecera() + `<main><div class="vacio">Cargando…</div></main>`; cargar(); return; }
-  const v = { inicio: vistaInicio, control: vistaControl, recibir: vistaRecibir, pendientes: vistaPendientes, procesar: vistaProcesar, dts: vistaDashboard, reportes: vistaReportes }[S.vista];
+  if (S.vista === 'actividad' && !esSupervisor()) S.vista = 'inicio';
+  const v = { inicio: vistaInicio, control: vistaControl, recibir: vistaRecibir, pendientes: vistaPendientes, procesar: vistaProcesar, dts: vistaDashboard, reportes: vistaReportes, actividad: vistaActividad }[S.vista];
   app.innerHTML = cabecera() + nav() + `<main>${S.aviso ? `<div class="msg ${S.aviso.t}" role="status">${esc(S.aviso.m)}</div>` : ''}${v()}</main>`;
   ligarComun();
-  ({ inicio: ligarInicio, control: ligarControl, recibir: ligarRecibir, pendientes: ligarPendientes, procesar: ligarProcesar, dts: ligarDashboard, reportes: ligarReportes }[S.vista])();
+  ({ inicio: ligarInicio, control: ligarControl, recibir: ligarRecibir, pendientes: ligarPendientes, procesar: ligarProcesar, dts: ligarDashboard, reportes: ligarReportes, actividad: ligarActividad }[S.vista])();
 }
 
 function cabecera() {
@@ -335,6 +336,7 @@ function nav() {
   const D = S.datos;
   const porProcesar = D.devoluciones.filter(abierta).length;
   const items = [['inicio', '🏠', 'Inicio'], ['control', '🎯', 'Control'], ['recibir', '📦', 'Recepción', D.esperadas.length], ['pendientes', '🕓', 'Por recibir'], ['procesar', '🔍', 'Procesar', porProcesar], ['dts', '📊', 'Dashboard'], ['reportes', '📋', 'Reportes']];
+  if (esSupervisor()) items.push(['actividad', '🔥', 'Actividad']);
   return `<nav class="tabs">${items.map(([k, ic, l, b]) => `<button data-v="${k}" ${S.vista === k ? 'aria-current="page"' : ''}><span class="ic">${ic}</span>${l}${k === 'procesar' && b ? `<span class="badge">${b}</span>` : ''}</button>`).join('')}</nav>`;
 }
 function ligarComun() {
@@ -347,7 +349,7 @@ function ligarComun() {
   };
   document.querySelectorAll('[data-ir]').forEach(b => b.onclick = () => ir(b.dataset.ir));
 }
-function ir(v, extra = {}) { S.vista = v; S.aviso = null; S.sel = null; S.form = null; S.filtroProd = null; Object.assign(S, extra); render(); window.scrollTo(0, 0); }
+function ir(v, extra = {}) { if (v === 'actividad') S.act = null; S.vista = v; S.aviso = null; S.sel = null; S.form = null; S.filtroProd = null; Object.assign(S, extra); render(); window.scrollTo(0, 0); }
 function salir() { S.token = null; S.usuario = null; S.datos = null; try { localStorage.removeItem('rd_sesion'); } catch (e) {} render(); }
 
 // login
@@ -453,6 +455,90 @@ function itemEsp(e) {
     ${e.entregada_en ? `<div class="meta" style="font-weight:600">📦 Entregada en bodega según ${esc(e.marketplace)}: ${corta(e.entregada_en)}${e.etapa === 'entregada' ? ` · hace ${Math.max(0, Math.floor((ahoraChile() - fecha(e.entregada_en)) / 864e5))} d` : ''}</div>` : ''}
     <div class="meta">${esc(e.marketplace)} · ${esc(TIPOS[e.tipo] || '')} · orden ${esc(e.orden)} · ${esc(e.sku)}${e.motivo ? ' · ' + esc(e.motivo) : ''}</div>
     <div class="meta mono">${esc(String(e.codigos || '').split('|').join(' · '))}${dias !== null ? ` · hace ${dias} d` : ''}</div></div>`;
+}
+
+// actividad: mapa de calor de uso de la app por operario. Solo supervisores (el servidor también lo valida).
+const SUPERVISORES = ['spinones', 'pancho'];
+const HORAS_ACT = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
+function esSupervisor() { return !!S.usuario && SUPERVISORES.includes(S.usuario.usuario); }
+function actFilas() {
+  // [fecha 'yyyy-MM-dd', hora, minuto, usuario, accion, detalle]
+  return (S.act.filas || []).map(f => { const [d, h] = String(f[0]).split(' '); const [hh, mm] = (h || '0:0').split(':').map(Number); return [d, hh, mm, f[1], f[2], f[3]]; });
+}
+function celdaCalor(n, max, titulo) {
+  const a = n ? 0.15 + 0.85 * n / max : 0;
+  return `<td title="${esc(titulo)}" style="background:${n ? `rgba(233,77,26,${a.toFixed(2)})` : 'var(--fondo)'};color:${a > 0.55 ? '#fff' : 'var(--texto)'};text-align:center;border-radius:4px;padding:6px 2px;font-size:12px;min-width:26px">${n || ''}</td>`;
+}
+function vistaActividad() {
+  if (!S.act) return '<div><h1>Actividad del equipo</h1></div><div class="vacio">Cargando actividad…</div>';
+  if (S.act.error) return `<div><h1>Actividad del equipo</h1></div><div class="msg err">${esc(S.act.error)}</div>`;
+  const F = actFilas();
+  const personas = [...new Set(F.map(f => f[3]))].filter(Boolean).sort();
+  const quien = S.actQuien || (personas.includes('Marcelo Orellana') ? 'Marcelo Orellana' : personas[0] || '');
+  const hoy = String(S.datos.ahora).slice(0, 10);
+  const dias = [...new Set(F.map(f => f[0]))].sort().reverse();
+  const dia = S.actDia || hoy;
+  const mias = F.filter(f => f[3] === quien), delDia = mias.filter(f => f[0] === dia);
+  // Mapa del día: hora × cuarto de hora.
+  const q = {}; delDia.forEach(f => { const k = f[1] + '-' + Math.floor(f[2] / 15); q[k] = (q[k] || 0) + 1; });
+  const maxQ = Math.max(1, ...Object.values(q));
+  const mapaDia = `<table style="border-spacing:3px;width:100%"><tr><th></th>${[':00', ':15', ':30', ':45'].map(x => `<th class="sub" style="font-weight:600">${x}</th>`).join('')}<th class="sub">Total</th></tr>
+    ${HORAS_ACT.map(h => { const tot = [0, 1, 2, 3].reduce((s, k) => s + (q[h + '-' + k] || 0), 0);
+      return `<tr><th class="sub" style="text-align:right;padding-right:6px">${h}:00</th>${[0, 1, 2, 3].map(k => celdaCalor(q[h + '-' + k] || 0, maxQ, `${h}:${String(k * 15).padStart(2, '0')} · ${q[h + '-' + k] || 0} acciones`)).join('')}<td class="sub" style="text-align:center">${tot || '—'}</td></tr>`; }).join('')}</table>`;
+  // Mapa de la semana: día × hora.
+  const s = {}; mias.forEach(f => { const k = f[0] + '-' + f[1]; s[k] = (s[k] || 0) + 1; });
+  const maxS = Math.max(1, ...Object.values(s));
+  const dsem = d => ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'][new Date(d + 'T12:00:00').getDay()] + ' ' + d.slice(8, 10) + '-' + d.slice(5, 7);
+  const mapaSem = `<div style="overflow-x:auto"><table style="border-spacing:3px"><tr><th></th>${HORAS_ACT.map(h => `<th class="sub" style="font-weight:600">${h}</th>`).join('')}</tr>
+    ${dias.map(d => `<tr><th class="sub" style="text-align:right;padding-right:6px;white-space:nowrap">${dsem(d)}</th>${HORAS_ACT.map(h => celdaCalor(s[d + '-' + h] || 0, maxS, `${dsem(d)} ${h}:00 · ${s[d + '-' + h] || 0} acciones`)).join('')}</tr>`).join('')}</table></div>`;
+  // Estadísticas del día.
+  const min = f => f[1] * 60 + f[2], hm = m => `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
+  const t = delDia.map(min).sort((a, b) => a - b);
+  const cuenta = a => delDia.filter(f => f[4] === a).length;
+  const noRec = delDia.filter(f => f[4] === 'app' && /no encontrado/.test(f[5])).length;
+  const bloques = new Set(delDia.map(f => f[1] * 4 + Math.floor(f[2] / 15))).size;
+  const pausas = [];
+  for (let i = 1; i < t.length; i++) if (t[i] - t[i - 1] >= 20) pausas.push([t[i - 1], t[i]]);
+  const finJornada = dia === hoy ? Math.min(Number(String(S.datos.ahora).slice(11, 13)) * 60 + Number(String(S.datos.ahora).slice(14, 16)), 18 * 60) : 18 * 60;
+  if (t.length && finJornada - t[t.length - 1] >= 20) pausas.push([t[t.length - 1], null]);
+  const rec = cuenta('recibir'), proc = cuenta('procesar');
+  const devsDia = S.datos.devoluciones.filter(d => d.origen !== 'App anterior');
+  const recHoy = devsDia.filter(d => d.recibido_por === quien && String(d.recibido_en).slice(0, 10) === dia);
+  const procDeEsas = recHoy.filter(esProc).length;
+  const abiertasAhora = S.datos.devoluciones.filter(abierta).length;
+  const mins = devsDia.filter(d => d.procesado_por === quien && String(d.procesado_en).slice(0, 10) === dia && d.horas_proceso !== '').map(d => Number(d.horas_proceso));
+  const tile = (n, l, c) => `<div class="tile" style="cursor:default${c ? ';border-color:var(--' + c + ')' : ''}"><div class="n">${n}</div><div class="l">${l}</div></div>`;
+  const stats = t.length ? `<div class="tiles">
+      ${tile(`${hm(t[0])}–${hm(t[t.length - 1])}`, 'Primera y última acción')}
+      ${tile(`${Math.floor(bloques * 15 / 60)} h ${bloques * 15 % 60} m`, `Tiempo con actividad (bloques de 15 min con al menos 1 acción)`)}
+      ${tile(rec, 'Devoluciones recibidas')}
+      ${tile(proc, 'Devoluciones procesadas', proc < rec ? 'warn' : '')}
+      ${tile(cuenta('buscarCodigo'), 'Escaneos buscados en línea')}
+      ${tile(noRec, 'Códigos no reconocidos', noRec ? 'warn' : '')}
+      ${tile(bloques ? ((rec + proc) / (bloques / 4)).toFixed(1) : '—', 'Recibidas + procesadas por hora activa')}
+      ${tile(`${procDeEsas}/${recHoy.length}`, 'Lo recibido ese día que ya está procesado')}
+      ${tile(abiertasAhora, 'En ET Brands sin procesar (ahora, todo el equipo)', abiertasAhora ? 'err' : '')}
+    </div>
+    <div class="card"><h2>Pausas de 20 min o más</h2>${pausas.length ? `<div class="lista">${pausas.map(([a, b]) => `<div class="item s-${b === null || b - a >= 60 ? 'err' : 'warn'}" style="cursor:default"><div class="r1"><span class="prod">${hm(a)} → ${b === null ? 'sin actividad hasta ahora' : hm(b)}</span><span class="pill p-${b === null || b - a >= 60 ? 'err' : 'warn'}">${b === null ? hm(finJornada - a).replace(':', ' h ') + ' min' : (b - a) + ' min'}</span></div>${a >= 12 * 60 + 30 && a <= 14 * 60 + 30 && b !== null && b - a <= 75 ? '<div class="meta">Probable colación</div>' : ''}</div>`).join('')}</div>` : '<div class="vacio">Sin pausas largas.</div>'}
+      <p class="sub">Solo cuenta lo que deja registro en la app: escanear, recibir, procesar y códigos no reconocidos. Mirar listas o buscar paquetes en bodega no queda registrado.</p></div>
+    ${mins.length ? `<p class="sub">Tiempo promedio de recepción a procesamiento de lo que procesó ese día: <b>${(mins.reduce((a, b) => a + b, 0) / mins.length).toFixed(1)} h hábiles</b>.</p>` : ''}`
+    : '<div class="vacio">Sin actividad registrada ese día.</div>';
+  return `<div><h1>Actividad del equipo</h1><p class="sub">Solo la ven Seba y Francisco. Cada acción registrada en la app suma 1. Actualizado ${corta(D_ahora())}</p></div>
+    <div class="fila"><label class="f esp">Persona<select id="actQuien">${personas.map(p => `<option ${p === quien ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></label>
+      <label class="f esp">Día<select id="actDia">${(dias.includes(hoy) ? dias : [hoy].concat(dias)).map(d => `<option value="${d}" ${d === dia ? 'selected' : ''}>${dsem(d)}${d === hoy ? ' (hoy)' : ''}</option>`).join('')}</select></label></div>
+    ${stats}
+    <div class="card"><h2>Mapa de calor del día</h2><p class="sub">Acciones por cuarto de hora. Vacío = sin movimiento en la app.</p>${mapaDia}</div>
+    <div class="card"><h2>Últimos 7 días</h2><p class="sub">Acciones por hora.</p>${mapaSem}</div>`;
+}
+function D_ahora() { return S.datos.ahora; }
+function ligarActividad() {
+  if (!S.act) {
+    api('actividad', { dias: 7 }).then(j => { S.act = j.ok ? j : { error: j.error || 'No se pudo cargar' }; render(); })
+      .catch(e => { S.act = { error: e.message }; render(); });
+    return;
+  }
+  const qn = $('#actQuien'); if (qn) qn.onchange = () => { S.actQuien = qn.value; render(); };
+  const dd = $('#actDia'); if (dd) dd.onchange = () => { S.actDia = dd.value; render(); };
 }
 
 // control: qué falta hoy y en qué estado está cada una (para el supervisor)
