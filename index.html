@@ -113,7 +113,7 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 // ====== CONFIGURACIÓN: pega aquí la URL /exec del Apps Script publicado ======
-const VERSION = '2026.11.04-2';
+const VERSION = '2026.11.04-3';
 const API_URL = 'https://script.google.com/macros/s/AKfycbxYHuQd_UwrjCn3LQ0Y_q35DRnTWrO-Yx3UI8MLodUQFWnZaXGCi_zgbD1rwylW-f7k/exec';
 // ============================================================================
 
@@ -1088,8 +1088,10 @@ function datosReporte() {
   const porSku = {};
   filas.forEach(d => {
     const k = d.sku || '(sin SKU)';
-    const x = porSku[k] = porSku[k] || { sku: k, producto: d.producto || '', Reintegrable: 0, Reacondicionable: 0, Merma: 0, total: 0 };
+    const x = porSku[k] = porSku[k] || { sku: k, producto: d.producto || '', Reintegrable: 0, Reacondicionable: 0, Merma: 0, total: 0, ordenes: [] };
     if (!x.producto && d.producto) x.producto = d.producto;
+    const o = d.orden || d.codigo_escaneado;
+    if (o && !x.ordenes.includes(o)) x.ordenes.push(o);
     if (x[d.clasificacion] !== undefined) x[d.clasificacion] += cant(d);
     x.total += cant(d);
   });
@@ -1110,12 +1112,12 @@ function vistaReportes() {
     <button class="btn nar" data-xls="reporte" ${filas.length ? '' : 'disabled'}>⬇ Descargar Excel</button></div>
   <div class="card"><h2>Resumen por SKU (${resumen.length})</h2>
     <p class="sub">${filas.length} devoluciones · <b>${tot('Reintegrable')}</b> unidades reintegrables · ${tot('Reacondicionable')} reacondicionables · ${tot('Merma')} merma</p>
-    ${resumen.length ? `<div class="tbl"><table><thead><tr><th>SKU</th><th>Producto</th><th>Reintegrable</th><th>Reacondicionable</th><th>Merma</th><th>Total</th></tr></thead><tbody>
-    ${resumen.map(x => `<tr><td class="mono">${esc(x.sku)}</td><td>${esc(x.producto)}</td><td class="mono"><b>${x.Reintegrable || ''}</b></td><td class="mono">${x.Reacondicionable || ''}</td><td class="mono">${x.Merma || ''}</td><td class="mono">${x.total}</td></tr>`).join('')}
+    ${resumen.length ? `<div class="tbl"><table><thead><tr><th>SKU</th><th>Producto</th><th>Órdenes</th><th>Reintegrable</th><th>Reacondicionable</th><th>Merma</th><th>Total</th></tr></thead><tbody>
+    ${resumen.map(x => `<tr><td class="mono">${esc(x.sku)}</td><td>${esc(x.producto)}</td><td class="mono" style="font-size:12px">${x.ordenes.map(esc).join('<br>')}</td><td class="mono"><b>${x.Reintegrable || ''}</b></td><td class="mono">${x.Reacondicionable || ''}</td><td class="mono">${x.Merma || ''}</td><td class="mono">${x.total}</td></tr>`).join('')}
     </tbody></table></div>` : '<div class="vacio">Sin devoluciones procesadas con estos filtros.</div>'}</div>
   <div class="card"><h2>Detalle (${filas.length})</h2>${filas.length > MAX ? `<p class="sub">Se muestran las ${MAX} más recientes; el Excel trae todas.</p>` : ''}
     ${filas.length ? `<div class="tbl"><table><thead><tr><th>Procesada</th><th>Marketplace</th><th>Orden</th><th>SKU</th><th>Producto</th><th>Estado</th><th>Clasificación</th><th>Acción</th><th>Por</th></tr></thead><tbody>
-    ${filas.slice(0, MAX).map(d => `<tr><td class="mono">${corta(d.procesado_en)}</td><td>${esc(d.marketplace)}</td><td class="mono">${esc(d.orden)}</td><td class="mono">${esc(d.sku)}</td><td>${esc(d.producto)}</td><td>${esc(d.condicion)}</td><td>${esc(d.clasificacion)}</td><td>${esc(d.accion_mkp)}</td><td>${esc(d.procesado_por)}${d.origen === 'App anterior' ? ' <span class="pill p-gris">app anterior</span>' : ''}</td></tr>`).join('')}
+    ${filas.slice(0, MAX).map(d => `<tr><td class="mono">${corta(d.procesado_en)}</td><td>${esc(d.marketplace)}</td><td class="mono">${esc(d.orden || d.codigo_escaneado)}</td><td class="mono">${esc(d.sku)}</td><td>${esc(d.producto)}</td><td>${esc(d.condicion)}</td><td>${esc(d.clasificacion)}</td><td>${esc(d.accion_mkp)}</td><td>${esc(d.procesado_por)}${d.origen === 'App anterior' ? ' <span class="pill p-gris">app anterior</span>' : ''}</td></tr>`).join('')}
     </tbody></table></div>` : '<div class="vacio">Sin datos.</div>'}</div>`;
 }
 function ligarReportes() {
@@ -1156,9 +1158,9 @@ const EXPORTES = {
   pendientes: () => ['pendientes_recepcion', [['Pendientes de recepción', listaPendientes().map(xlsEsp)]]],
   procesar: () => ['por_procesar', [['Por procesar', colaProcesar().map(xlsDev)]]],
   reporte: () => { const { filas, resumen } = datosReporte(); return ['devoluciones_procesadas', [
-    ['Resumen por SKU', resumen.map(x => ({ SKU: x.sku, Producto: x.producto, Reintegrable: x.Reintegrable, Reacondicionable: x.Reacondicionable, Merma: x.Merma, Total: x.total }))],
+    ['Resumen por SKU', resumen.map(x => ({ SKU: x.sku, Producto: x.producto, 'Órdenes': x.ordenes.join(', '), Reintegrable: x.Reintegrable, Reacondicionable: x.Reacondicionable, Merma: x.Merma, Total: x.total }))],
     ['Detalle', filas.map(d => ({
-      'Procesada': d.procesado_en, 'Recibida': d.recibido_en, 'Marketplace': d.marketplace, 'Orden': d.orden, 'SKU': d.sku, 'Producto': d.producto,
+      'Procesada': d.procesado_en, 'Recibida': d.recibido_en, 'Marketplace': d.marketplace, 'Orden': d.orden || d.codigo_escaneado, 'SKU': d.sku, 'Producto': d.producto,
       'Cantidad': cant(d), 'Tipo': TIPOS[d.tipo] || d.tipo || '', 'Motivo cliente': d.motivo, 'Estado del producto': d.condicion, 'Clasificación': d.clasificacion,
       'Acción marketplace': d.accion_mkp, 'Dentro de plazo': d.dentro_sla, 'Horas hábiles': d.horas_proceso, 'Recibido por': d.recibido_por,
       'Procesado por': d.procesado_por, 'Verificación marketplace': d.verif_mkp, 'Comentario': d.comentario, 'Fotos': d.fotos, 'Origen': d.origen || 'App nueva' }))]]]; }
