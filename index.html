@@ -113,7 +113,7 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 // ====== CONFIGURACIÓN: pega aquí la URL /exec del Apps Script publicado ======
-const VERSION = '2026.11.04-1';
+const VERSION = '2026.11.04-2';
 const API_URL = 'https://script.google.com/macros/s/AKfycbxYHuQd_UwrjCn3LQ0Y_q35DRnTWrO-Yx3UI8MLodUQFWnZaXGCi_zgbD1rwylW-f7k/exec';
 // ============================================================================
 
@@ -575,7 +575,40 @@ function ligarActividad() {
 }
 
 // control: qué falta hoy y en qué estado está cada una (para el supervisor)
+// Control = lo que sigue pendiente en los portales (MELI y Falabella), haya llegado o no, con lo que
+// falta hacer. Viene del servidor en D.mkp; con un servidor viejo se usa el cálculo anterior.
 function filasControl() {
+  const D = S.datos;
+  if (!D.mkp) return filasControlViejo();
+  const ahora = ahoraChile(), fin = finDeHoy(), filas = [], vistas = new Set();
+  D.mkp.forEach(e => {
+    const plazo = fecha(e.plazo_mkp);
+    if (!plazo || plazo < ahora) return;
+    const llego = e.recibida === 'Si' || !!e.dev_id || e.etapa === 'entregada';
+    if (!llego && plazo > fin) return;
+    let paso, tono, llegada = '';
+    if (e.dev_id) {
+      vistas.add(e.dev_id);
+      llegada = `${corta(e.recibido_en)} (app, ${(e.recibido_por || '').split(' ')[0]})`;
+      if (/Procesada/.test(e.dev_estado)) { paso = `Procesada: ${e.accion_mkp || 'sin acción'} · falta hacerlo en el portal`; tono = 'warn'; }
+      else { paso = 'Escaneada · falta procesar'; tono = 'warn'; }
+    } else if (e.recibida === 'Si') { paso = 'Marcada como recibida sin registro propio · revisar en bodega'; tono = 'warn'; }
+    else if (e.etapa === 'entregada') { paso = 'Llegó a bodega y NO está escaneada · buscarla'; tono = 'err'; }
+    else if (/retiro/i.test(e.estado_mkp)) { paso = 'Esperando retiro en agencia del courier · ir a buscarla'; tono = 'err'; }
+    else { paso = 'En camino · no ha llegado'; tono = 'gris'; }
+    if (!llegada && e.entregada_en) llegada = `${corta(e.entregada_en)} (según ${e.marketplace})`;
+    filas.push({ id: e.dev_id || e.id, esp: !e.dev_id, plazo: e.plazo_mkp, mk: e.marketplace, orden: e.venta || e.orden, sku: e.sku,
+      prod: e.producto, paso, tono, llegada, extra: e.estado_mkp });
+  });
+  // Lo recibido de otros canales (Ripley, Paris, Walmart...) que cierra hoy su plazo interno.
+  D.devoluciones.filter(d => abierta(d) && !vistas.has(d.id) && venceHoy(d.vence_sla) && fecha(d.vence_sla) >= ahora).forEach(d => {
+    filas.push({ id: d.id, esp: false, plazo: d.vence_sla, mk: d.marketplace, orden: d.orden || d.codigo_escaneado, sku: d.sku, prod: d.producto,
+      paso: 'Escaneada · falta procesar (plazo interno)', tono: 'warn', llegada: `${corta(d.recibido_en)} (app, ${(d.recibido_por || '').split(' ')[0]})` });
+  });
+  const orden = { err: 0, warn: 1, gris: 2 };
+  return filas.sort((a, b) => (fecha(a.plazo) || 0) - (fecha(b.plazo) || 0) || orden[a.tono] - orden[b.tono]);
+}
+function filasControlViejo() {
   // Solo lo que todavía se puede salvar: lo vencido no se muestra.
   const D = S.datos, ahora = ahoraChile();
   const filas = [];
@@ -611,10 +644,10 @@ function vistaControl() {
   const n = t => filas.filter(f => f.tono === t).length;
   const recientes = D.devoluciones.filter(d => d.origen !== 'App anterior' && fecha(d.recibido_en) >= new Date(ahoraChile() - 2 * 864e5))
     .sort((a, b) => fecha(b.recibido_en) - fecha(a.recibido_en));
-  return `<div><h1>Control del día</h1><p class="sub">Lo que vence hoy y todavía se puede gestionar (o ya llegó y no se ha movido), y en qué paso está. Lo vencido no aparece. Actualizado ${corta(D.ahora)}</p></div>
+  return `<div><h1>Control del día</h1><p class="sub">Lo que sigue pendiente en los portales de Mercado Libre y Falabella (lo que ya llegó, más lo que vence hoy aunque no llegue), cuándo llegó a bodega y qué falta. Lo vencido no aparece. Actualizado ${corta(D.ahora)}</p></div>
   <div class="tiles">
-    <div class="tile ${n('err') ? 'alert' : ''}"><div class="n">${n('err')}</div><div class="l">Llegaron y NO están escaneadas</div></div>
-    <div class="tile"><div class="n">${n('warn')}</div><div class="l">Escaneadas, Full o que nunca salieron: procesar o bajar</div></div>
+    <div class="tile ${n('err') ? 'alert' : ''}"><div class="n">${n('err')}</div><div class="l">Llegaron y NO están escaneadas (o esperan retiro)</div></div>
+    <div class="tile"><div class="n">${n('warn')}</div><div class="l">En bodega: procesar o gestionar en el portal</div></div>
     <div class="tile"><div class="n">${n('gris')}</div><div class="l">Vencen hoy pero aún no llegan</div></div>
     <div class="tile"><div class="n">${recHoy} / ${procHoy}</div><div class="l">Recibidas / procesadas hoy en la app</div></div>
   </div>
@@ -622,8 +655,9 @@ function vistaControl() {
   <div class="card">${filas.length ? `<div class="lista">${filas.map(f => `<div class="item s-${f.tono === 'gris' ? '' : f.tono}" ${f.esp ? `data-esp="${esc(f.id)}"` : `data-dev="${esc(f.id)}"`} role="button" tabindex="0">
     <div class="r1"><span class="prod">${esc(f.prod || f.sku || 'Sin detalle')}</span><span class="pill p-${f.tono}">${esc(f.paso)}</span></div>
     <div class="meta">${esc(f.mk)} · orden <b class="mono">${esc(f.orden)}</b> · ${esc(f.sku)}</div>
+    ${f.llegada ? `<div class="meta">📦 Llegó a bodega: <b>${esc(f.llegada)}</b></div>` : ''}
     ${f.extra ? `<div class="meta">${esc(f.extra)}</div>` : ''}
-    ${f.plazo ? `<div class="meta" style="font-weight:600;color:${f.vencido ? 'var(--err)' : 'var(--texto)'}">${f.esp ? 'Plazo marketplace' : 'Plazo SLA'}: ${corta(f.plazo)} · ${restante(f.plazo).txt}</div>` : ''}</div>`).join('')}</div>` : '<div class="vacio">Nada pendiente para hoy.</div>'}</div>
+    ${f.plazo ? `<div class="meta" style="font-weight:600;color:${venceHoy(f.plazo) ? 'var(--err)' : 'var(--texto)'}">Plazo: ${corta(f.plazo)} · ${restante(f.plazo).txt}</div>` : ''}</div>`).join('')}</div>` : '<div class="vacio">Nada pendiente para hoy.</div>'}</div>
   <div class="card"><div class="fila"><h2 class="esp">Recibidas en bodega (últimos 2 días)</h2><span class="pill p-gris">${recientes.length}</span></div>
     <p class="sub">Cuándo y quién las escaneó, y si ya se procesaron.</p>
     ${recientes.length ? `<div class="lista">${recientes.map(d => `<div class="item s-${esProc(d) ? 'ok' : 'warn'}" data-dev="${esc(d.id)}" role="button" tabindex="0">
@@ -638,7 +672,7 @@ function ligarControl() {
     const filas = filasControl(), hora = s => s ? corta(s) : 'sin plazo';
     const grupo = (t, titulo) => { const g = filas.filter(f => f.tono === t); return g.length ? `*${titulo}* (${g.length})\n` + g.map(f => `• ${f.mk} ${f.orden} · ${f.sku} · ${f.prod || ''} · ${f.paso}${f.plazo ? ' · vence ' + hora(f.plazo) : ''}`).join('\n') + '\n\n' : ''; };
     const txt = `Devoluciones pendientes ${corta(S.datos.ahora)}\n\n` + grupo('err', 'Llegaron a bodega y NO están escaneadas: buscarlas y escanearlas')
-      + grupo('warn', 'Escaneadas, Full o que nunca salieron: procesar / bajar hoy') + grupo('gris', 'Vencen hoy y no han llegado: avisar si aparecen');
+      + grupo('warn', 'En bodega: procesar o gestionar en el portal') + grupo('gris', 'Vencen hoy y no han llegado: avisar si aparecen');
     try { await navigator.clipboard.writeText(txt.trim()); S.aviso = { t: 'ok', m: 'Lista copiada. Pégala en WhatsApp.' }; }
     catch (e) { prompt('Copia la lista:', txt.trim()); }
     render();
@@ -1117,8 +1151,8 @@ const xlsDev = d => ({ 'Plazo SLA': d.vence_sla || '', 'Plazo marketplace': d.pl
 const EXPORTES = {
   foco: () => { const f = focoHoy(); return ['foco_de_hoy', [['Plazo mkp vence hoy', f.plazoHoy.map(xlsEsp)], ['Entregadas sin escanear', f.sinEscanear.map(xlsEsp)],
     ['Vencidas sin procesar', f.vencidasLista.map(xlsDev)], ['Se cierran hoy', f.cierranHoy.map(xlsDev)], ['Por procesar', f.porProcesar.map(xlsDev)]]]; },
-  control: () => ['control_del_dia', [['Control del día', filasControl().map(f => ({ Paso: f.paso, Marketplace: f.mk, Orden: f.orden, SKU: f.sku,
-    Producto: f.prod, Plazo: f.plazo || '', 'Tipo de plazo': f.plazo ? (f.esp ? 'Marketplace' : 'SLA') : '', Detalle: f.extra || '' })) ]]],
+  control: () => ['control_del_dia', [['Control del día', filasControl().map(f => ({ Plazo: f.plazo || '', Marketplace: f.mk, 'N° venta / orden': f.orden,
+    SKU: f.sku, Producto: f.prod, 'Llegó a bodega': f.llegada || '', 'Qué falta': f.paso, 'Estado en el portal': f.extra || '' })) ]]],
   pendientes: () => ['pendientes_recepcion', [['Pendientes de recepción', listaPendientes().map(xlsEsp)]]],
   procesar: () => ['por_procesar', [['Por procesar', colaProcesar().map(xlsDev)]]],
   reporte: () => { const { filas, resumen } = datosReporte(); return ['devoluciones_procesadas', [
