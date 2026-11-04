@@ -113,7 +113,7 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 // ====== CONFIGURACIÓN: pega aquí la URL /exec del Apps Script publicado ======
-const VERSION = '2026.11.03-1';
+const VERSION = '2026.11.04-1';
 const API_URL = 'https://script.google.com/macros/s/AKfycbxYHuQd_UwrjCn3LQ0Y_q35DRnTWrO-Yx3UI8MLodUQFWnZaXGCi_zgbD1rwylW-f7k/exec';
 // ============================================================================
 
@@ -376,26 +376,32 @@ function ligarLogin() {
 }
 
 // inicio
+function focoHoy() {
+  const D = S.datos, enEt = D.devoluciones.filter(abierta);
+  return { enEt,
+    plazoHoy: D.esperadas.filter(e => venceHoy(e.plazo_mkp) && e.etapa !== 'full' && e.tipo !== 'full').sort((a, b) => fecha(a.plazo_mkp) - fecha(b.plazo_mkp)),
+    sinEscanear: D.esperadas.filter(e => e.etapa === 'entregada').sort((a, b) => fecha(a.entregada_en || a.fecha_inicio) - fecha(b.entregada_en || b.fecha_inicio)),
+    cierranHoy: enEt.filter(d => venceHoy(d.vence_sla) && d.estado === 'En ET Brands'),
+    vencidasLista: enEt.filter(d => d.estado === 'Vencida sin procesar' || fecha(d.vence_sla) < ahoraChile()),
+    porProcesar: enEt.slice().sort((a, b) => fecha(a.vence_sla) - fecha(b.vence_sla)) };
+}
 function vistaInicio() {
-  const D = S.datos;
-  const enEt = D.devoluciones.filter(abierta);
+  const D = S.datos, F = focoHoy();
+  const enEt = F.enEt;
   const vencidas = enEt.filter(d => semaforo(d) === 'err');
   const urg = enEt.filter(d => semaforo(d) === 'warn');
   const noId = D.devoluciones.filter(d => d.identificada === 'No' && abierta(d)).length;
   const k = kpiDts(periodo('mes'));
   const cola = enEt.slice().sort((a, b) => fecha(a.vence_sla) - fecha(b.vence_sla)).slice(0, 6);
-  const plazoHoy = D.esperadas.filter(e => venceHoy(e.plazo_mkp) && e.etapa !== 'full' && e.tipo !== 'full').sort((a, b) => fecha(a.plazo_mkp) - fecha(b.plazo_mkp));
-  const sinEscanear = D.esperadas.filter(e => e.etapa === 'entregada');
-  const cierranHoy = enEt.filter(d => venceHoy(d.vence_sla));
-  const vencidasLista = enEt.filter(d => d.estado === 'Vencida sin procesar' || fecha(d.vence_sla) < ahoraChile());
+  const { plazoHoy, sinEscanear, cierranHoy, vencidasLista } = F;
   const conRetraso = D.devoluciones.filter(d => d.estado === 'Procesada con retraso' && fecha(d.procesado_en) > new Date(ahoraChile() - 7 * 864e5));
   const enCamino = D.esperadas.filter(e => e.etapa === 'en_camino').length;
   const bloque = (titulo, ayuda, items, fn, tono, max = 8) => `<div class="card"><div class="fila"><h2 class="esp">${titulo}</h2><span class="pill ${items.length ? tono : 'p-ok'}">${items.length}</span></div>
     <p class="sub">${ayuda}</p>${items.length ? `<div class="lista">${items.slice(0, max).map(fn).join('')}</div>${items.length > max ? `<p class="sub">y ${items.length - max} más</p>` : ''}` : '<div class="vacio">Nada pendiente.</div>'}</div>`;
   const foco = bloque('Plazo del marketplace vence hoy', 'Escanéala en Recepción si está en bodega. Si no corresponde recibirla (Full) o no se encuentra, bájala con los botones.', plazoHoy, itemEspGestion, 'p-err', 999)
-    + bloque('Entregadas y sin escanear', 'El marketplace dice que ya llegaron a la bodega. Búscalas y recíbelas; si no aparecen, márcalas.', sinEscanear.sort((a, b) => fecha(a.entregada_en || a.fecha_inicio) - fecha(b.entregada_en || b.fecha_inicio)), itemEspGestion, 'p-err', 30)
+    + bloque('Entregadas y sin escanear', 'El marketplace dice que ya llegaron a la bodega. Búscalas y recíbelas; si no aparecen, márcalas.', sinEscanear, itemEspGestion, 'p-err', 30)
     + bloque('Vencidas sin procesar', 'Pasó el plazo de 1 día hábil y siguen sin procesar. Cuentan como incumplimiento del DTS.', vencidasLista, itemDev, 'p-err')
-    + bloque('En ET Brands: se cierran hoy', 'Recibidas que deben procesarse antes de que termine el día.', cierranHoy.filter(d => d.estado === 'En ET Brands'), itemDev, 'p-warn')
+    + bloque('En ET Brands: se cierran hoy', 'Recibidas que deben procesarse antes de que termine el día.', cierranHoy, itemDev, 'p-warn')
     + bloque('Procesadas con retraso (últimos 7 días)', 'Se procesaron después del plazo.', conRetraso, itemDev, 'p-warn');
   return `<div><h1>Hola, ${esc((S.usuario.nombre || '').split(' ')[0])}</h1><p class="sub">Actualizado ${corta(D.ahora)}</p></div>
   <div class="tiles">
@@ -405,7 +411,7 @@ function vistaInicio() {
     ${noId ? `<button class="tile alert" data-ir="procesar"><div class="n">${noId}</div><div class="l">Recibidas sin identificar</div></button>` : ''}
   </div>
   <div class="fila"><button class="btn nar esp" data-ir="recibir">📦 Recibir devolución</button><button class="btn esp" data-ir="procesar">🔍 Procesar devolución</button></div>
-  <div><h2>Foco de hoy</h2><p class="sub">${enCamino} devoluciones más vienen en camino.</p></div>
+  <div class="fila"><h2 class="esp">Foco de hoy</h2>${btnXls('foco')}</div><div><p class="sub">${enCamino} devoluciones más vienen en camino.</p></div>
   ${foco}
   <div class="card"><h2>Por procesar, próximas a vencer</h2>${cola.length ? `<div class="lista">${cola.map(itemDev).join('')}</div>` : '<div class="vacio">No hay devoluciones por procesar.</div>'}</div>`;
 }
@@ -612,7 +618,7 @@ function vistaControl() {
     <div class="tile"><div class="n">${n('gris')}</div><div class="l">Vencen hoy pero aún no llegan</div></div>
     <div class="tile"><div class="n">${recHoy} / ${procHoy}</div><div class="l">Recibidas / procesadas hoy en la app</div></div>
   </div>
-  <div class="fila"><button class="btn nar esp" id="copiarControl">📋 Copiar lista para WhatsApp</button></div>
+  <div class="fila"><button class="btn nar esp" id="copiarControl">📋 Copiar lista para WhatsApp</button>${btnXls('control')}</div>
   <div class="card">${filas.length ? `<div class="lista">${filas.map(f => `<div class="item s-${f.tono === 'gris' ? '' : f.tono}" ${f.esp ? `data-esp="${esc(f.id)}"` : `data-dev="${esc(f.id)}"`} role="button" tabindex="0">
     <div class="r1"><span class="prod">${esc(f.prod || f.sku || 'Sin detalle')}</span><span class="pill p-${f.tono}">${esc(f.paso)}</span></div>
     <div class="meta">${esc(f.mk)} · orden <b class="mono">${esc(f.orden)}</b> · ${esc(f.sku)}</div>
@@ -745,16 +751,20 @@ async function recibir(body) {
 }
 
 // pendientes de recepción
-function vistaPendientes() {
-  const D = S.datos;
-  const q = limpiar(S.busqueda);
+function listaPendientes() {
+  const D = S.datos, q = limpiar(S.busqueda);
   let l = D.esperadas.filter(e => (S.filtroMk === 'Todos' || e.marketplace === S.filtroMk) && (!S.filtroEt || e.etapa === S.filtroEt));
   if (q) l = l.filter(e => limpiar(Object.values(e).join(' ')).includes(q));
   const orden = e => (venceHoy(e.plazo_mkp) ? 0 : e.etapa === 'entregada' ? 1 : 2);
   l.sort((a, b) => orden(a) - orden(b) || (a.fecha_inicio || '').localeCompare(b.fecha_inicio || ''));
+  return l;
+}
+function vistaPendientes() {
+  const D = S.datos, l = listaPendientes();
   const cuentaEt = k => D.esperadas.filter(e => e.etapa === k).length;
   const cuenta = m => D.esperadas.filter(e => m === 'Todos' || e.marketplace === m).length;
   return `<div><h1>Devoluciones pendientes de recepción</h1><p class="sub">Lo que los marketplaces informan que viene a la bodega. Arriba lo que tiene plazo hoy y lo que ya figura entregado.</p></div>
+  <div class="fila">${btnXls('pendientes')}<span class="sub">Descarga la lista con los filtros que tengas puestos.</span></div>
   <div class="chips">${['Todos', ...MARKETPLACES].map(m => `<button class="chip" data-mk="${m}" aria-pressed="${S.filtroMk === m}">${m} (${cuenta(m)})</button>`).join('')}</div>
   <div class="chips">${[['', 'Todas las etapas'], ['entregada', 'Entregadas sin escanear'], ['en_camino', 'En camino'], ['por_despachar', 'Por despachar']].map(([k, t]) => `<button class="chip" data-et="${k}" aria-pressed="${(S.filtroEt || '') === k}">${t}${k ? ` (${cuentaEt(k)})` : ''}</button>`).join('')}</div>
   <label class="f">Buscar (o escanear: te lleva a Recepción)<input id="bq" value="${esc(S.busqueda)}" placeholder="Orden, SKU, producto o tracking"></label>
@@ -786,16 +796,19 @@ function abrirProceso(id) {
   S.form = { corresponde: 'Si', condicion: '', clasificacion: '', accion: sug, fotos: [], comentario: '', sku: '' };
   render(); window.scrollTo(0, 0);
 }
+function colaProcesar() {
+  const FP = S.filtroProd;
+  return S.datos.devoluciones.filter(d => abierta(d) && (!FP || FP.skus.includes(d.sku))).sort((a, b) => fecha(a.vence_sla) - fecha(b.vence_sla));
+}
 function vistaProcesar() {
   const D = S.datos;
   if (S.sel && S.sel.id) return escaner('scP', 'Escanear la siguiente etiqueta o EAN') + formProceso(D.devoluciones.find(x => x.id === S.sel.id));
-  const FP = S.filtroProd;
-  const cola = D.devoluciones.filter(d => abierta(d) && (!FP || FP.skus.includes(d.sku))).sort((a, b) => fecha(a.vence_sla) - fecha(b.vence_sla));
+  const FP = S.filtroProd, cola = colaProcesar();
   const hechas = D.devoluciones.filter(esProc).sort((a, b) => (b.procesado_en || '').localeCompare(a.procesado_en || '')).slice(0, 10);
   return `<div><h1>Procesar devolución</h1><p class="sub">Escanea la etiqueta para ver qué producto se espera y registrar en qué estado llegó. Plazo: 1 día hábil desde la recepción.</p></div>
   ${escaner('scP', 'Escanear etiqueta o EAN del producto')}
   ${FP ? `<div class="msg ok">Mostrando solo ${esc(FP.nombre)} (EAN ${esc(FP.ean)}). <a href="#" id="quitarFP">Ver todas</a></div>` : ''}
-  <div class="card"><h2>Por procesar (${cola.length})</h2>${cola.length ? `<div class="lista">${cola.map(itemDev).join('')}</div>` : '<div class="vacio">Todo al día.</div>'}</div>
+  <div class="card"><div class="fila"><h2 class="esp">Por procesar (${cola.length})</h2>${btnXls('procesar')}</div>${cola.length ? `<div class="lista">${cola.map(itemDev).join('')}</div>` : '<div class="vacio">Todo al día.</div>'}</div>
   ${hechas.length ? `<div class="card"><h2>Últimas procesadas</h2><div class="lista">${hechas.map(itemDev).join('')}</div></div>` : ''}`;
 }
 function formProceso(d) {
@@ -1060,7 +1073,7 @@ function vistaReportes() {
   <div class="chips">${chips('cl', [['Todas', 'Todas'], ['Reintegrable', 'Reintegrable'], ['Reacondicionable', 'Reacondicionable'], ['Merma', 'Merma']])}
     <button class="chip" id="rpAnt" aria-pressed="${F.ant}">Incluir app anterior</button></div>
   <div class="fila"><label class="f esp">Buscar SKU, producto u orden<input id="rpq" value="${esc(F.q)}" autocomplete="off"></label>
-    <button class="btn nar" id="rpExcel" ${filas.length ? '' : 'disabled'}>⬇ Descargar Excel</button></div>
+    <button class="btn nar" data-xls="reporte" ${filas.length ? '' : 'disabled'}>⬇ Descargar Excel</button></div>
   <div class="card"><h2>Resumen por SKU (${resumen.length})</h2>
     <p class="sub">${filas.length} devoluciones · <b>${tot('Reintegrable')}</b> unidades reintegrables · ${tot('Reacondicionable')} reacondicionables · ${tot('Merma')} merma</p>
     ${resumen.length ? `<div class="tbl"><table><thead><tr><th>SKU</th><th>Producto</th><th>Reintegrable</th><th>Reacondicionable</th><th>Merma</th><th>Total</th></tr></thead><tbody>
@@ -1076,30 +1089,51 @@ function ligarReportes() {
   $('#rpAnt').onclick = () => { S.rp.ant = !S.rp.ant; render(); };
   const q = $('#rpq');
   q.oninput = () => { S.rp.q = q.value; const pos = q.selectionStart; render(); const n = $('#rpq'); n.focus(); n.setSelectionRange(pos, pos); };
-  $('#rpExcel').onclick = descargarExcel;
 }
 function cargarScript(src) {
   return new Promise((ok, mal) => { const sc = document.createElement('script'); sc.src = src; sc.onload = ok; sc.onerror = () => mal(new Error('No se pudo cargar el generador de Excel')); document.head.appendChild(sc); });
 }
-async function descargarExcel() {
-  const b = $('#rpExcel'); b.disabled = true; b.textContent = 'Generando…';
+// Excel: hojas = [[nombre, filas]]. El nombre del archivo lleva la fecha de hoy.
+async function bajarExcel(b, nombre, hojas) {
+  const txt = b.textContent; b.disabled = true; b.textContent = 'Generando…';
   try {
     if (!window.XLSX) await cargarScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
-    const { F, filas, resumen } = datosReporte();
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(resumen.map(x => ({
-      SKU: x.sku, Producto: x.producto, Reintegrable: x.Reintegrable, Reacondicionable: x.Reacondicionable, Merma: x.Merma, Total: x.total }))), 'Resumen por SKU');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filas.map(d => ({
+    hojas.forEach(([t, filas]) => XLSX.utils.book_append_sheet(wb,
+      filas.length ? XLSX.utils.json_to_sheet(filas) : XLSX.utils.aoa_to_sheet([['Sin registros']]), t.slice(0, 31)));
+    const h = ahoraChile(), p2 = n => String(n).padStart(2, '0');
+    XLSX.writeFile(wb, `${nombre}_${h.getFullYear()}-${p2(h.getMonth() + 1)}-${p2(h.getDate())}.xlsx`);
+  } catch (e) { S.aviso = { t: 'err', m: e.message }; render(); return; }
+  b.textContent = txt; b.disabled = false;
+}
+const xlsEsp = e => ({ 'Plazo marketplace': e.plazo_mkp || '', Marketplace: e.marketplace, Orden: e.orden, SKU: e.sku, Producto: e.producto,
+  Cantidad: e.cantidad, Tipo: TIPOS[e.tipo] || e.tipo || '', Etapa: ETAPAS[e.etapa] || e.etapa || '', 'Estado marketplace': e.estado_mkp,
+  'Entregada en bodega (marketplace)': e.entregada_en || '', 'Inicio devolución': e.fecha_inicio || '', Motivo: e.motivo,
+  'Códigos': String(e.codigos || '').split('|').join(' '), Link: e.link || '' });
+const xlsDev = d => ({ 'Plazo SLA': d.vence_sla || '', 'Plazo marketplace': d.plazo_mkp || '', Estado: d.estado, Marketplace: d.marketplace,
+  Orden: d.orden || d.codigo_escaneado, SKU: d.sku, Producto: d.producto, Cantidad: cant(d), Tipo: TIPOS[d.tipo] || d.tipo || '',
+  'Recibida': d.recibido_en, 'Recibida por': d.recibido_por, 'Procesada': d.procesado_en || '', 'Acción marketplace': d.accion_mkp || '',
+  Motivo: d.motivo, Link: d.link || '' });
+const EXPORTES = {
+  foco: () => { const f = focoHoy(); return ['foco_de_hoy', [['Plazo mkp vence hoy', f.plazoHoy.map(xlsEsp)], ['Entregadas sin escanear', f.sinEscanear.map(xlsEsp)],
+    ['Vencidas sin procesar', f.vencidasLista.map(xlsDev)], ['Se cierran hoy', f.cierranHoy.map(xlsDev)], ['Por procesar', f.porProcesar.map(xlsDev)]]]; },
+  control: () => ['control_del_dia', [['Control del día', filasControl().map(f => ({ Paso: f.paso, Marketplace: f.mk, Orden: f.orden, SKU: f.sku,
+    Producto: f.prod, Plazo: f.plazo || '', 'Tipo de plazo': f.plazo ? (f.esp ? 'Marketplace' : 'SLA') : '', Detalle: f.extra || '' })) ]]],
+  pendientes: () => ['pendientes_recepcion', [['Pendientes de recepción', listaPendientes().map(xlsEsp)]]],
+  procesar: () => ['por_procesar', [['Por procesar', colaProcesar().map(xlsDev)]]],
+  reporte: () => { const { filas, resumen } = datosReporte(); return ['devoluciones_procesadas', [
+    ['Resumen por SKU', resumen.map(x => ({ SKU: x.sku, Producto: x.producto, Reintegrable: x.Reintegrable, Reacondicionable: x.Reacondicionable, Merma: x.Merma, Total: x.total }))],
+    ['Detalle', filas.map(d => ({
       'Procesada': d.procesado_en, 'Recibida': d.recibido_en, 'Marketplace': d.marketplace, 'Orden': d.orden, 'SKU': d.sku, 'Producto': d.producto,
       'Cantidad': cant(d), 'Tipo': TIPOS[d.tipo] || d.tipo || '', 'Motivo cliente': d.motivo, 'Estado del producto': d.condicion, 'Clasificación': d.clasificacion,
       'Acción marketplace': d.accion_mkp, 'Dentro de plazo': d.dentro_sla, 'Horas hábiles': d.horas_proceso, 'Recibido por': d.recibido_por,
-      'Procesado por': d.procesado_por, 'Verificación marketplace': d.verif_mkp, 'Comentario': d.comentario, 'Fotos': d.fotos, 'Origen': d.origen || 'App nueva' }))), 'Detalle');
-    const h = ahoraChile(), p2 = n => String(n).padStart(2, '0');
-    XLSX.writeFile(wb, `devoluciones_procesadas_${h.getFullYear()}-${p2(h.getMonth() + 1)}-${p2(h.getDate())}.xlsx`);
-    b.textContent = '⬇ Descargar Excel';
-  } catch (e) { S.aviso = { t: 'err', m: e.message }; render(); return; }
-  b.disabled = false;
-}
+      'Procesado por': d.procesado_por, 'Verificación marketplace': d.verif_mkp, 'Comentario': d.comentario, 'Fotos': d.fotos, 'Origen': d.origen || 'App nueva' }))]]]; }
+};
+const btnXls = k => `<button class="btn" style="padding:6px 12px;font-size:13px;flex:0 0 auto" data-xls="${k}">⬇ Excel</button>`;
+document.addEventListener('click', ev => {
+  const b = ev.target.closest('[data-xls]'); if (!b || !S.datos) return;
+  const [nombre, hojas] = EXPORTES[b.dataset.xls](); bajarExcel(b, nombre, hojas);
+});
 
 function ligarDts() { document.querySelectorAll('[data-p]').forEach(b => b.onclick = () => { S.periodo = b.dataset.p; render(); }); }
 
