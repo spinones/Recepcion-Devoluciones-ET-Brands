@@ -113,7 +113,7 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 // ====== CONFIGURACIÓN: pega aquí la URL /exec del Apps Script publicado ======
-const VERSION = '2026.11.04-3';
+const VERSION = '2026.11.05-1';
 const API_URL = 'https://script.google.com/macros/s/AKfycbxYHuQd_UwrjCn3LQ0Y_q35DRnTWrO-Yx3UI8MLodUQFWnZaXGCi_zgbD1rwylW-f7k/exec';
 // ============================================================================
 
@@ -580,15 +580,14 @@ function ligarActividad() {
 function filasControl() {
   const D = S.datos;
   if (!D.mkp) return filasControlViejo();
-  const ahora = ahoraChile(), fin = finDeHoy(), filas = [], vistas = new Set();
+  // Solo lo que el portal pide cerrar en las próximas 24 h: lo mismo que muestran MELI ("para revisar
+  // hoy") y Falabella (cuenta regresiva). Lo demás no se ve acá.
+  const ahora = ahoraChile(), tope = new Date(ahora.getTime() + 24 * 3600e3), filas = [];
   D.mkp.forEach(e => {
     const plazo = fecha(e.plazo_mkp);
-    if (!plazo || plazo < ahora) return;
-    const llego = e.recibida === 'Si' || !!e.dev_id || e.etapa === 'entregada';
-    if (!llego && plazo > fin) return;
+    if (!plazo || plazo < ahora || plazo > tope) return;
     let paso, tono, llegada = '';
     if (e.dev_id) {
-      vistas.add(e.dev_id);
       llegada = `${corta(e.recibido_en)} (app, ${(e.recibido_por || '').split(' ')[0]})`;
       if (/Procesada/.test(e.dev_estado)) { paso = `Procesada: ${e.accion_mkp || 'sin acción'} · falta hacerlo en el portal`; tono = 'warn'; }
       else { paso = 'Escaneada · falta procesar'; tono = 'warn'; }
@@ -599,11 +598,6 @@ function filasControl() {
     if (!llegada && e.entregada_en) llegada = `${corta(e.entregada_en)} (según ${e.marketplace})`;
     filas.push({ id: e.dev_id || e.id, esp: !e.dev_id, plazo: e.plazo_mkp, mk: e.marketplace, orden: e.venta || e.orden, sku: e.sku,
       prod: e.producto, paso, tono, llegada, extra: e.estado_mkp });
-  });
-  // Lo recibido de otros canales (Ripley, Paris, Walmart...) que cierra hoy su plazo interno.
-  D.devoluciones.filter(d => abierta(d) && !vistas.has(d.id) && venceHoy(d.vence_sla) && fecha(d.vence_sla) >= ahora).forEach(d => {
-    filas.push({ id: d.id, esp: false, plazo: d.vence_sla, mk: d.marketplace, orden: d.orden || d.codigo_escaneado, sku: d.sku, prod: d.producto,
-      paso: 'Escaneada · falta procesar (plazo interno)', tono: 'warn', llegada: `${corta(d.recibido_en)} (app, ${(d.recibido_por || '').split(' ')[0]})` });
   });
   const orden = { err: 0, warn: 1, gris: 2 };
   return filas.sort((a, b) => (fecha(a.plazo) || 0) - (fecha(b.plazo) || 0) || orden[a.tono] - orden[b.tono]);
@@ -642,13 +636,11 @@ function vistaControl() {
   const procHoy = D.devoluciones.filter(d => esProc(d) && String(d.procesado_en).slice(0, 10) === hoyTxt && d.origen !== 'App anterior').length;
   const recHoy = D.devoluciones.filter(d => String(d.recibido_en).slice(0, 10) === hoyTxt && d.origen !== 'App anterior').length;
   const n = t => filas.filter(f => f.tono === t).length;
-  const recientes = D.devoluciones.filter(d => d.origen !== 'App anterior' && fecha(d.recibido_en) >= new Date(ahoraChile() - 2 * 864e5))
-    .sort((a, b) => fecha(b.recibido_en) - fecha(a.recibido_en));
-  return `<div><h1>Control del día</h1><p class="sub">Lo que sigue pendiente en los portales de Mercado Libre y Falabella (lo que ya llegó, más lo que vence hoy aunque no llegue), cuándo llegó a bodega y qué falta. Lo vencido no aparece. Actualizado ${corta(D.ahora)}</p></div>
+  return `<div><h1>Control del día</h1><p class="sub">Lo que Mercado Libre y Falabella piden cerrar en las próximas 24 horas, cuándo llegó a bodega y qué falta. Actualizado ${corta(D.ahora)}</p></div>
   <div class="tiles">
     <div class="tile ${n('err') ? 'alert' : ''}"><div class="n">${n('err')}</div><div class="l">Llegaron y NO están escaneadas (o esperan retiro)</div></div>
     <div class="tile"><div class="n">${n('warn')}</div><div class="l">En bodega: procesar o gestionar en el portal</div></div>
-    <div class="tile"><div class="n">${n('gris')}</div><div class="l">Vencen hoy pero aún no llegan</div></div>
+    <div class="tile"><div class="n">${n('gris')}</div><div class="l">Vencen en 24 h y aún no llegan</div></div>
     <div class="tile"><div class="n">${recHoy} / ${procHoy}</div><div class="l">Recibidas / procesadas hoy en la app</div></div>
   </div>
   <div class="fila"><button class="btn nar esp" id="copiarControl">📋 Copiar lista para WhatsApp</button>${btnXls('control')}</div>
@@ -657,13 +649,7 @@ function vistaControl() {
     <div class="meta">${esc(f.mk)} · orden <b class="mono">${esc(f.orden)}</b> · ${esc(f.sku)}</div>
     ${f.llegada ? `<div class="meta">📦 Llegó a bodega: <b>${esc(f.llegada)}</b></div>` : ''}
     ${f.extra ? `<div class="meta">${esc(f.extra)}</div>` : ''}
-    ${f.plazo ? `<div class="meta" style="font-weight:600;color:${venceHoy(f.plazo) ? 'var(--err)' : 'var(--texto)'}">Plazo: ${corta(f.plazo)} · ${restante(f.plazo).txt}</div>` : ''}</div>`).join('')}</div>` : '<div class="vacio">Nada pendiente para hoy.</div>'}</div>
-  <div class="card"><div class="fila"><h2 class="esp">Recibidas en bodega (últimos 2 días)</h2><span class="pill p-gris">${recientes.length}</span></div>
-    <p class="sub">Cuándo y quién las escaneó, y si ya se procesaron.</p>
-    ${recientes.length ? `<div class="lista">${recientes.map(d => `<div class="item s-${esProc(d) ? 'ok' : 'warn'}" data-dev="${esc(d.id)}" role="button" tabindex="0">
-      <div class="r1"><span class="prod">${esc(d.producto || d.sku || 'Sin identificar')}</span><span class="pill p-${esProc(d) ? 'ok' : 'warn'}">${esProc(d) ? 'Procesada ' + corta(d.procesado_en) : 'Falta procesar'}</span></div>
-      <div class="meta">Recibida <b>${corta(d.recibido_en)}</b> por ${esc(d.recibido_por || '—')}</div>
-      <div class="meta">${esc(d.marketplace || '—')} · orden <span class="mono">${esc(d.orden || d.codigo_escaneado)}</span> · ${esc(d.sku)}</div></div>`).join('')}</div>` : '<div class="vacio">Nada recibido en los últimos 2 días.</div>'}</div>`;
+    ${f.plazo ? `<div class="meta" style="font-weight:600;color:${venceHoy(f.plazo) ? 'var(--err)' : 'var(--texto)'}">Plazo: ${corta(f.plazo)} · ${restante(f.plazo).txt}</div>` : ''}</div>`).join('')}</div>` : '<div class="vacio">Nada que cerrar en las próximas 24 horas.</div>'}</div>`;
 }
 function ligarControl() {
   document.querySelectorAll('[data-dev]').forEach(b => b.onclick = () => abrirProceso(b.dataset.dev));
