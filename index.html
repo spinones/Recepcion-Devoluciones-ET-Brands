@@ -113,7 +113,7 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 // ====== CONFIGURACIÓN: pega aquí la URL /exec del Apps Script publicado ======
-const VERSION = '2026.11.06-1';
+const VERSION = '2026.11.06-2';
 const API_URL = 'https://script.google.com/macros/s/AKfycbxYHuQd_UwrjCn3LQ0Y_q35DRnTWrO-Yx3UI8MLodUQFWnZaXGCi_zgbD1rwylW-f7k/exec';
 // ============================================================================
 
@@ -582,10 +582,11 @@ function filasControl() {
   if (!D.mkp) return filasControlViejo();
   // Solo lo que el portal pide cerrar en las próximas 24 h: lo mismo que muestran MELI ("para revisar
   // hoy") y Falabella (cuenta regresiva). Lo demás no se ve acá.
-  const ahora = ahoraChile(), tope = new Date(ahora.getTime() + 24 * 3600e3), filas = [];
+  // Lo vencido que el portal sigue mostrando abierto también va (hasta 3 días): allá sigue pendiente.
+  const ahora = ahoraChile(), tope = new Date(ahora.getTime() + 24 * 3600e3), atras = new Date(ahora.getTime() - 3 * 864e5), filas = [];
   D.mkp.forEach(e => {
     const plazo = fecha(e.plazo_mkp);
-    if (!plazo || plazo < ahora || plazo > tope) return;
+    if (!plazo || plazo < atras || plazo > tope) return;
     let paso, tono, llegada = '';
     if (e.dev_id) {
       llegada = `${corta(e.recibido_en)} (app, ${(e.recibido_por || '').split(' ')[0]})`;
@@ -596,8 +597,17 @@ function filasControl() {
     else if (/retiro/i.test(e.estado_mkp)) { paso = 'Esperando retiro en agencia del courier · ir a buscarla'; tono = 'err'; }
     else { paso = 'En camino · no ha llegado'; tono = 'gris'; }
     if (!llegada && e.entregada_en) llegada = `${corta(e.entregada_en)} (según ${e.marketplace})`;
+    if (plazo < ahora) { paso = 'PLAZO VENCIDO, sigue abierta en el portal · ' + paso; tono = 'err'; }
     filas.push({ id: e.dev_id || e.id, esp: !e.dev_id, plazo: e.plazo_mkp, mk: e.marketplace, orden: e.venta || e.orden, sku: e.sku,
       prod: e.producto, paso, tono, llegada, extra: e.estado_mkp });
+  });
+  // Reclamos abiertos en MELI sin devolución (producto incompleto, distinto...): no llega nada, pero hay que responder.
+  (D.reclamos || []).forEach(r => {
+    const plazo = fecha(r.plazo_mkp);
+    if (!plazo || plazo < atras || plazo > tope) return;
+    filas.push({ id: r.id, recl: true, link: r.link, plazo: r.plazo_mkp, mk: r.marketplace, orden: r.venta || r.orden, sku: r.sku, prod: r.producto,
+      paso: (plazo < ahora ? 'PLAZO VENCIDO · ' : '') + 'Reclamo abierto (sin devolución) · responder en MELI', tono: 'err',
+      extra: 'No llega nada a bodega: revisar qué se despachó y responder el reclamo' });
   });
   const orden = { err: 0, warn: 1, gris: 2 };
   return filas.sort((a, b) => (fecha(a.plazo) || 0) - (fecha(b.plazo) || 0) || orden[a.tono] - orden[b.tono]);
@@ -641,26 +651,51 @@ function vistaControl() {
   const n = t => filas.filter(f => f.tono === t).length;
   return `<div><h1>Control del día</h1><p class="sub">Lo que Mercado Libre y Falabella piden cerrar en las próximas 24 horas, cuándo llegó a bodega y qué falta. Actualizado ${corta(D.ahora)}</p></div>
   <div class="tiles">
-    <div class="tile ${n('err') ? 'alert' : ''}"><div class="n">${n('err')}</div><div class="l">Llegaron y NO están escaneadas (o esperan retiro)</div></div>
+    <div class="tile ${n('err') ? 'alert' : ''}"><div class="n">${n('err')}</div><div class="l">Urgentes: sin escanear, vencidas o reclamos</div></div>
     <div class="tile"><div class="n">${n('warn')}</div><div class="l">En bodega: procesar o gestionar en el portal</div></div>
     <div class="tile"><div class="n">${n('gris')}</div><div class="l">Vencen en 24 h y aún no llegan</div></div>
     <div class="tile"><div class="n">${recHoy} / ${procHoy}</div><div class="l">Recibidas / procesadas hoy en la app</div></div>
   </div>
+  <div class="fila"><button class="btn esp" id="correrBot" ${S.bot ? 'disabled' : ''}>${S.bot ? '🤖 ' + esc(S.bot) : '🤖 Correr bot (leer MELI y Falabella ahora)'}</button></div>
+  <p class="sub">Última lectura · MELI: ${esc(corta((D.ultimaSyncMeli || '').split(' · ')[0]) || '—')} · Falabella: ${esc(corta((D.ultimaSyncFal || '').split(' · ')[0]) || '—')}.
+    Falabella se lee con la extensión de Chrome (sola todos los días a las 8:05, o con este botón).</p>
   <div class="fila"><button class="btn nar esp" id="copiarControl">📋 Copiar lista para WhatsApp</button>${btnXls('control')}</div>
-  <div class="card">${filas.length ? `<div class="lista">${filas.map(f => `<div class="item s-${f.tono === 'gris' ? '' : f.tono}" ${f.esp ? `data-esp="${esc(f.id)}"` : `data-dev="${esc(f.id)}"`} role="button" tabindex="0">
+  <div class="card">${filas.length ? `<div class="lista">${filas.map(f => `<div class="item s-${f.tono === 'gris' ? '' : f.tono}" ${f.recl ? `data-link="${esc(f.link)}"` : f.esp ? `data-esp="${esc(f.id)}"` : `data-dev="${esc(f.id)}"`} role="button" tabindex="0">
     <div class="r1"><span class="prod">${esc(f.prod || f.sku || 'Sin detalle')}</span><span class="pill p-${f.tono}">${esc(f.paso)}</span></div>
     <div class="meta">${esc(f.mk)} · orden <b class="mono">${esc(f.orden)}</b> · ${esc(f.sku)}</div>
     ${f.llegada ? `<div class="meta">📦 Llegó a bodega: <b>${esc(f.llegada)}</b></div>` : ''}
     ${f.extra ? `<div class="meta">${esc(f.extra)}</div>` : ''}
     ${f.plazo ? `<div class="meta" style="font-weight:600;color:${venceHoy(f.plazo) ? 'var(--err)' : 'var(--texto)'}">Plazo: ${corta(f.plazo)} · ${restante(f.plazo).txt}</div>` : ''}</div>`).join('')}</div>` : '<div class="vacio">Nada que cerrar en las próximas 24 horas.</div>'}</div>`;
 }
+// Bot: MELI lo lee el servidor al tiro; Falabella, la extensión de Chrome (abre el Seller Center con #etb-bot,
+// lo lee con tu sesión y cierra la pestaña).
+async function correrBot() {
+  S.bot = 'Leyendo Falabella y MELI…'; render();
+  const antesFal = S.datos.ultimaSyncFal || '';
+  const w = window.open('https://sellercenter.falabella.com/order/return#etb-bot', '_blank');
+  let msg = '';
+  try { const j = await api('botMeli'); msg = j.ok ? `MELI leído (${j.meli} devoluciones).` : 'MELI: ' + (j.error || 'error'); }
+  catch (e) { msg = 'MELI: ' + e.message; }
+  S.bot = 'Esperando a Falabella…'; render();
+  for (let i = 0; i < 12; i++) {   // hasta ~2 min
+    await cargar(true);
+    if ((S.datos.ultimaSyncFal || '') !== antesFal) break;
+    await new Promise(r => setTimeout(r, 10000));
+  }
+  const falOk = (S.datos.ultimaSyncFal || '') !== antesFal;
+  S.bot = '';
+  S.aviso = { t: falOk ? 'ok' : 'err', m: msg + (falOk ? ' Falabella leído.' : w ? ' Falabella no respondió: revisa la pestaña del Seller Center (¿pide iniciar sesión?) y que la extensión esté recargada.' : ' El navegador bloqueó la pestaña de Falabella: permite ventanas emergentes.') };
+  render();
+}
 function ligarControl() {
   document.querySelectorAll('[data-dev]').forEach(b => b.onclick = () => abrirProceso(b.dataset.dev));
+  document.querySelectorAll('[data-link]').forEach(b => b.onclick = () => window.open(b.dataset.link, '_blank'));
   ligarEsp();
+  $('#correrBot').onclick = correrBot;
   $('#copiarControl').onclick = async () => {
     const filas = filasControl(), hora = s => s ? corta(s) : 'sin plazo';
     const grupo = (t, titulo) => { const g = filas.filter(f => f.tono === t); return g.length ? `*${titulo}* (${g.length})\n` + g.map(f => `• ${f.mk} ${f.orden} · ${f.sku} · ${f.prod || ''} · ${f.paso}${f.plazo ? ' · vence ' + hora(f.plazo) : ''}`).join('\n') + '\n\n' : ''; };
-    const txt = `Devoluciones pendientes ${corta(S.datos.ahora)}\n\n` + grupo('err', 'Llegaron a bodega y NO están escaneadas: buscarlas y escanearlas')
+    const txt = `Devoluciones pendientes ${corta(S.datos.ahora)}\n\n` + grupo('err', 'Urgentes: llegaron sin escanear, plazo vencido o reclamo por responder')
       + grupo('warn', 'En bodega: procesar o gestionar en el portal') + grupo('gris', 'Vencen hoy y no han llegado: avisar si aparecen');
     try { await navigator.clipboard.writeText(txt.trim()); S.aviso = { t: 'ok', m: 'Lista copiada. Pégala en WhatsApp.' }; }
     catch (e) { prompt('Copia la lista:', txt.trim()); }
