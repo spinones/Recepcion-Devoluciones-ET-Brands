@@ -113,7 +113,7 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 // ====== CONFIGURACIÓN: pega aquí la URL /exec del Apps Script publicado ======
-const VERSION = '2026.11.06-2';
+const VERSION = '2026.11.09-1';
 const API_URL = 'https://script.google.com/macros/s/AKfycbxYHuQd_UwrjCn3LQ0Y_q35DRnTWrO-Yx3UI8MLodUQFWnZaXGCi_zgbD1rwylW-f7k/exec';
 // ============================================================================
 
@@ -583,7 +583,8 @@ function filasControl() {
   // Solo lo que el portal pide cerrar en las próximas 24 h: lo mismo que muestran MELI ("para revisar
   // hoy") y Falabella (cuenta regresiva). Lo demás no se ve acá.
   // Lo vencido que el portal sigue mostrando abierto también va (hasta 3 días): allá sigue pendiente.
-  const ahora = ahoraChile(), tope = new Date(ahora.getTime() + 24 * 3600e3), atras = new Date(ahora.getTime() - 3 * 864e5), filas = [];
+  // "Atender hoy" = vence hoy (o ya venció y sigue abierta); "Por vencer" = los próximos 3 días.
+  const ahora = ahoraChile(), fin = finDeHoy(), tope = new Date(fin.getTime() + 3 * 864e5), atras = new Date(ahora.getTime() - 3 * 864e5), filas = [];
   D.mkp.forEach(e => {
     const plazo = fecha(e.plazo_mkp);
     if (!plazo || plazo < atras || plazo > tope) return;
@@ -598,15 +599,15 @@ function filasControl() {
     else { paso = 'En camino · no ha llegado'; tono = 'gris'; }
     if (!llegada && e.entregada_en) llegada = `${corta(e.entregada_en)} (según ${e.marketplace})`;
     if (plazo < ahora) { paso = 'PLAZO VENCIDO, sigue abierta en el portal · ' + paso; tono = 'err'; }
-    filas.push({ id: e.dev_id || e.id, esp: !e.dev_id, plazo: e.plazo_mkp, mk: e.marketplace, orden: e.venta || e.orden, sku: e.sku,
+    filas.push({ id: e.dev_id || e.id, esp: !e.dev_id, plazo: e.plazo_mkp, hoy: plazo <= fin, mk: e.marketplace, orden: e.venta || e.orden, sku: e.sku,
       prod: e.producto, paso, tono, llegada, extra: e.estado_mkp });
   });
   // Reclamos abiertos en MELI sin devolución (producto incompleto, distinto...): no llega nada, pero hay que responder.
   (D.reclamos || []).forEach(r => {
     const plazo = fecha(r.plazo_mkp);
     if (!plazo || plazo < atras || plazo > tope) return;
-    filas.push({ id: r.id, recl: true, link: r.link, plazo: r.plazo_mkp, mk: r.marketplace, orden: r.venta || r.orden, sku: r.sku, prod: r.producto,
-      paso: (plazo < ahora ? 'PLAZO VENCIDO · ' : '') + 'Reclamo abierto (sin devolución) · responder en MELI', tono: 'err',
+    filas.push({ id: r.id, recl: true, link: r.link, plazo: r.plazo_mkp, hoy: plazo <= fin, mk: r.marketplace, orden: r.venta || r.orden, sku: r.sku, prod: r.producto,
+      paso: (plazo < ahora ? 'PLAZO VENCIDO · ' : '') + 'Reclamo sin devolución · ' + (r.accion || 'responder en MELI'), tono: 'err',
       extra: 'No llega nada a bodega: revisar qué se despachó y responder el reclamo' });
   });
   const orden = { err: 0, warn: 1, gris: 2 };
@@ -643,29 +644,31 @@ function filasControlViejo() {
   const orden = { err: 0, warn: 1, gris: 2 };
   return filas.sort((a, b) => orden[a.tono] - orden[b.tono] || (fecha(a.plazo) || 0) - (fecha(b.plazo) || 0));
 }
+const itemControl = f => `<div class="item s-${f.tono === 'gris' ? '' : f.tono}" ${f.recl ? `data-link="${esc(f.link)}"` : f.esp ? `data-esp="${esc(f.id)}"` : `data-dev="${esc(f.id)}"`} role="button" tabindex="0">
+    <div class="r1"><span class="prod">${esc(f.prod || f.sku || 'Sin detalle')}</span><span class="pill p-${f.tono}">${esc(f.paso)}</span></div>
+    <div class="meta">${esc(f.mk)} · orden <b class="mono">${esc(f.orden)}</b> · ${esc(f.sku)}</div>
+    ${f.llegada ? `<div class="meta">📦 Llegó a bodega: <b>${esc(f.llegada)}</b></div>` : ''}
+    ${f.extra ? `<div class="meta">${esc(f.extra)}</div>` : ''}
+    ${f.plazo ? `<div class="meta" style="font-weight:600;color:${venceHoy(f.plazo) ? 'var(--err)' : 'var(--texto)'}">Plazo: ${corta(f.plazo)} · ${restante(f.plazo).txt}</div>` : ''}</div>`;
 function vistaControl() {
-  const D = S.datos, filas = filasControl();
+  const D = S.datos, todas = filasControl(), filas = todas.filter(f => f.hoy), luego = todas.filter(f => !f.hoy);
   const hoyTxt = String(D.ahora).slice(0, 10);
   const procHoy = D.devoluciones.filter(d => esProc(d) && String(d.procesado_en).slice(0, 10) === hoyTxt && d.origen !== 'App anterior').length;
   const recHoy = D.devoluciones.filter(d => String(d.recibido_en).slice(0, 10) === hoyTxt && d.origen !== 'App anterior').length;
   const n = t => filas.filter(f => f.tono === t).length;
-  return `<div><h1>Control del día</h1><p class="sub">Lo que Mercado Libre y Falabella piden cerrar en las próximas 24 horas, cuándo llegó a bodega y qué falta. Actualizado ${corta(D.ahora)}</p></div>
+  return `<div><h1>Control del día</h1><p class="sub">Lo que Mercado Libre y Falabella piden cerrar hoy (y lo que vence en los próximos días, más abajo), cuándo llegó a bodega y qué falta. Actualizado ${corta(D.ahora)}</p></div>
   <div class="tiles">
     <div class="tile ${n('err') ? 'alert' : ''}"><div class="n">${n('err')}</div><div class="l">Urgentes: sin escanear, vencidas o reclamos</div></div>
     <div class="tile"><div class="n">${n('warn')}</div><div class="l">En bodega: procesar o gestionar en el portal</div></div>
-    <div class="tile"><div class="n">${n('gris')}</div><div class="l">Vencen en 24 h y aún no llegan</div></div>
+    <div class="tile"><div class="n">${n('gris')}</div><div class="l">Vencen hoy y aún no llegan</div></div>
     <div class="tile"><div class="n">${recHoy} / ${procHoy}</div><div class="l">Recibidas / procesadas hoy en la app</div></div>
   </div>
   <div class="fila"><button class="btn esp" id="correrBot" ${S.bot ? 'disabled' : ''}>${S.bot ? '🤖 ' + esc(S.bot) : '🤖 Correr bot (leer MELI y Falabella ahora)'}</button></div>
   <p class="sub">Última lectura · MELI: ${esc(corta((D.ultimaSyncMeli || '').split(' · ')[0]) || '—')} · Falabella: ${esc(corta((D.ultimaSyncFal || '').split(' · ')[0]) || '—')}.
     Falabella se lee con la extensión de Chrome (sola todos los días a las 8:05, o con este botón).</p>
   <div class="fila"><button class="btn nar esp" id="copiarControl">📋 Copiar lista para WhatsApp</button>${btnXls('control')}</div>
-  <div class="card">${filas.length ? `<div class="lista">${filas.map(f => `<div class="item s-${f.tono === 'gris' ? '' : f.tono}" ${f.recl ? `data-link="${esc(f.link)}"` : f.esp ? `data-esp="${esc(f.id)}"` : `data-dev="${esc(f.id)}"`} role="button" tabindex="0">
-    <div class="r1"><span class="prod">${esc(f.prod || f.sku || 'Sin detalle')}</span><span class="pill p-${f.tono}">${esc(f.paso)}</span></div>
-    <div class="meta">${esc(f.mk)} · orden <b class="mono">${esc(f.orden)}</b> · ${esc(f.sku)}</div>
-    ${f.llegada ? `<div class="meta">📦 Llegó a bodega: <b>${esc(f.llegada)}</b></div>` : ''}
-    ${f.extra ? `<div class="meta">${esc(f.extra)}</div>` : ''}
-    ${f.plazo ? `<div class="meta" style="font-weight:600;color:${venceHoy(f.plazo) ? 'var(--err)' : 'var(--texto)'}">Plazo: ${corta(f.plazo)} · ${restante(f.plazo).txt}</div>` : ''}</div>`).join('')}</div>` : '<div class="vacio">Nada que cerrar en las próximas 24 horas.</div>'}</div>`;
+  <div class="card"><h2>Atender hoy (${filas.length})</h2>${filas.length ? `<div class="lista">${filas.map(itemControl).join('')}</div>` : '<div class="vacio">Nada que cerrar hoy.</div>'}</div>
+  <div class="card"><h2>Por vencer · próximos 3 días (${luego.length})</h2>${luego.length ? `<div class="lista">${luego.map(itemControl).join('')}</div>` : '<div class="vacio">Nada por vencer.</div>'}</div>`;
 }
 // Bot: MELI lo lee el servidor al tiro; Falabella, la extensión de Chrome (abre el Seller Center con #etb-bot,
 // lo lee con tu sesión y cierra la pestaña).
@@ -693,10 +696,11 @@ function ligarControl() {
   ligarEsp();
   $('#correrBot').onclick = correrBot;
   $('#copiarControl').onclick = async () => {
-    const filas = filasControl(), hora = s => s ? corta(s) : 'sin plazo';
+    const todas = filasControl(), filas = todas.filter(f => f.hoy), luego = todas.filter(f => !f.hoy), hora = s => s ? corta(s) : 'sin plazo';
     const grupo = (t, titulo) => { const g = filas.filter(f => f.tono === t); return g.length ? `*${titulo}* (${g.length})\n` + g.map(f => `• ${f.mk} ${f.orden} · ${f.sku} · ${f.prod || ''} · ${f.paso}${f.plazo ? ' · vence ' + hora(f.plazo) : ''}`).join('\n') + '\n\n' : ''; };
     const txt = `Devoluciones pendientes ${corta(S.datos.ahora)}\n\n` + grupo('err', 'Urgentes: llegaron sin escanear, plazo vencido o reclamo por responder')
-      + grupo('warn', 'En bodega: procesar o gestionar en el portal') + grupo('gris', 'Vencen hoy y no han llegado: avisar si aparecen');
+      + grupo('warn', 'En bodega: procesar o gestionar en el portal') + grupo('gris', 'Vencen hoy y no han llegado: avisar si aparecen')
+      + (luego.length ? `*Por vencer (próximos 3 días)* (${luego.length})\n` + luego.map(f => `• ${f.mk} ${f.orden} · ${f.sku} · ${f.paso} · vence ${hora(f.plazo)}`).join('\n') : '');
     try { await navigator.clipboard.writeText(txt.trim()); S.aviso = { t: 'ok', m: 'Lista copiada. Pégala en WhatsApp.' }; }
     catch (e) { prompt('Copia la lista:', txt.trim()); }
     render();
@@ -1201,7 +1205,7 @@ const xlsDev = d => ({ 'Plazo SLA': d.vence_sla || '', 'Plazo marketplace': d.pl
 const EXPORTES = {
   foco: () => { const f = focoHoy(); return ['foco_de_hoy', [['Plazo mkp vence hoy', f.plazoHoy.map(xlsEsp)], ['Entregadas sin escanear', f.sinEscanear.map(xlsEsp)],
     ['Vencidas sin procesar', f.vencidasLista.map(xlsDev)], ['Se cierran hoy', f.cierranHoy.map(xlsDev)], ['Por procesar', f.porProcesar.map(xlsDev)]]]; },
-  control: () => ['control_del_dia', [['Control del día', filasControl().map(f => ({ Plazo: f.plazo || '', Marketplace: f.mk, 'N° venta / orden': f.orden,
+  control: () => ['control_del_dia', [['Control del día', filasControl().map(f => ({ 'Cuándo': f.hoy ? 'Atender hoy' : 'Por vencer', Plazo: f.plazo || '', Marketplace: f.mk, 'N° venta / orden': f.orden,
     SKU: f.sku, Producto: f.prod, 'Llegó a bodega': f.llegada || '', 'Qué falta': f.paso, 'Estado en el portal': f.extra || '' })) ]]],
   pendientes: () => ['pendientes_recepcion', [['Pendientes de recepción', listaPendientes().map(xlsEsp)]]],
   procesar: () => ['por_procesar', [['Por procesar', colaProcesar().map(xlsDev)]]],
