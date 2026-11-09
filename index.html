@@ -113,7 +113,7 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 // ====== CONFIGURACIÓN: pega aquí la URL /exec del Apps Script publicado ======
-const VERSION = '2026.11.09-1';
+const VERSION = '2026.11.09-2';
 const API_URL = 'https://script.google.com/macros/s/AKfycbxYHuQd_UwrjCn3LQ0Y_q35DRnTWrO-Yx3UI8MLodUQFWnZaXGCi_zgbD1rwylW-f7k/exec';
 // ============================================================================
 
@@ -603,7 +603,9 @@ function filasControl() {
       prod: e.producto, paso, tono, llegada, extra: e.estado_mkp });
   });
   // Reclamos abiertos en MELI sin devolución (producto incompleto, distinto...): no llega nada, pero hay que responder.
-  (D.reclamos || []).forEach(r => {
+  // Los reclamos sin devolución son otra pestaña de MELI ("Reclamos y mediaciones"): no van en Control,
+  // que debe calzar 1 a 1 con Devoluciones → Para tu revisión y con Falabella.
+  [].forEach(r => {
     const plazo = fecha(r.plazo_mkp);
     if (!plazo || plazo < atras || plazo > tope) return;
     filas.push({ id: r.id, recl: true, link: r.link, plazo: r.plazo_mkp, hoy: plazo <= fin, mk: r.marketplace, orden: r.venta || r.orden, sku: r.sku, prod: r.producto,
