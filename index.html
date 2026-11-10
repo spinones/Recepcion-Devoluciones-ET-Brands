@@ -113,7 +113,7 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 // ====== CONFIGURACIÓN: pega aquí la URL /exec del Apps Script publicado ======
-const VERSION = '2026.11.09-2';
+const VERSION = '2026.11.10-1';
 const API_URL = 'https://script.google.com/macros/s/AKfycbxYHuQd_UwrjCn3LQ0Y_q35DRnTWrO-Yx3UI8MLodUQFWnZaXGCi_zgbD1rwylW-f7k/exec';
 // ============================================================================
 
@@ -721,9 +721,10 @@ function vistaRecibir() {
     const e = sel.esp;
     res = `<div class="card"><div class="r1 fila"><h2 class="esp">${esc(e.producto || e.sku)}</h2><span class="pill p-nar">${esc(TIPOS[e.tipo] || '')}</span></div>
       <div class="kv"><span>Marketplace</span><b>${esc(e.marketplace)}</b><span>Orden</span><b class="mono">${esc(e.orden)}</b><span>SKU</span><b>${esc(e.sku)}</b>
-      <span>Cantidad</span><b>${esc(e.cantidad || 1)}</b><span>Motivo</span><b>${esc(e.motivo || '—')}</b>${sel.codigo ? `<span>Código leído</span><b class="mono">${esc(sel.codigo)}</b>` : '<span>Elegida por</span><b>EAN del producto</b>'}</div>
+      <span>Cantidad</span><b><input id="rCant" type="number" min="1" max="999" inputmode="numeric" value="${esc(e.cantidad || 1)}" style="width:90px;padding:6px 8px;font-size:16px"></b><span>Motivo</span><b>${esc(e.motivo || '—')}</b>${sel.codigo ? `<span>Código leído</span><b class="mono">${esc(sel.codigo)}</b>` : '<span>Elegida por</span><b>EAN del producto</b>'}</div>
       ${sel.juntas ? `<div class="msg warn"><b>¿Las dos etiquetas son del mismo paquete?</b> La anterior (${esc(sel.codigo.split(' ')[0])}) no se reconoció y se va a guardar junto a esta. Si son de paquetes distintos, toca "Solo esta etiqueta".</div>
       <button class="btn sec full" id="soloEsta">Solo esta etiqueta (otro paquete)</button>` : ''}
+      <p class="sub">Si en el paquete (o en varios paquetes de la misma orden) vienen varias unidades, pon la cantidad total y confirma una sola vez.</p>
       <button class="btn nar full" id="confirmar">${sel.juntas ? 'Sí, mismo paquete: confirmar recepción' : 'Confirmar recepción'}</button>
       <p class="sub">Al confirmar queda "En ET Brands" y parte el plazo de 1 día hábil para procesarla.</p></div>`;
   } else if (sel && sel.prod) {
@@ -745,6 +746,7 @@ function vistaRecibir() {
       <label class="f">Marketplace<select id="nMk"><option value="">Elegir…</option>${MARKETPLACES.map(m => `<option>${m}</option>`).join('')}</select></label>
       <label class="f">Nº de orden (si se ve en la etiqueta)<input id="nOr" autocomplete="off"></label>
       <label class="f">Producto o SKU (opcional)<input id="nPr" autocomplete="off"></label>
+      <label class="f">Cantidad<input id="nCant" type="number" min="1" max="999" inputmode="numeric" value="1"></label>
       <button class="btn full" id="noIdent">Recibir como no identificada</button></div>`;
   }
   return `<div><h1>Recepción</h1><p class="sub">Escanea la etiqueta de devolución, la etiqueta de envío original o el EAN del producto. En PC usa el lector; en el celular toca 📷.</p></div>
@@ -764,12 +766,13 @@ function ligarRecibir() {
   });
   const se = $('#soloEsta'); if (se) se.onclick = () => { S.sel = { esp: S.sel.esp, codigo: S.sel.solo }; render(); };
   const c = $('#confirmar');
-  if (c) c.onclick = () => recibir({ esperadaId: S.sel.esp.id, codigo: S.sel.codigo });
+  const cantRec = sel => { const n = parseInt(($(sel) || {}).value, 10); return n > 0 ? String(Math.min(n, 999)) : '1'; };
+  if (c) c.onclick = () => recibir({ esperadaId: S.sel.esp.id, codigo: S.sel.codigo, cantidad: cantRec('#rCant') });
   const n = $('#noIdent');
   if (n) n.onclick = () => {
     if (!$('#nMk').value) { alertaCampo('#nMk', 'Elige el marketplace'); return; }
     const pr = $('#nPr').value.trim();
-    recibir({ codigo: S.sel.codigo, marketplace: $('#nMk').value, orden: $('#nOr').value.trim(), producto: pr, sku: /^[A-Z0-9-]+$/i.test(pr) ? pr.toUpperCase() : '' });
+    recibir({ codigo: S.sel.codigo, marketplace: $('#nMk').value, orden: $('#nOr').value.trim(), producto: pr, sku: /^[A-Z0-9-]+$/i.test(pr) ? pr.toUpperCase() : '', cantidad: cantRec('#nCant') });
   };
   const p = $('#aProcesar'); if (p) p.onclick = () => abrirProceso(S.sel.dev.id);
   // Elegida desde la lista por EAN: se recibe por la devolución esperada, sin guardar el EAN como código del paquete.
