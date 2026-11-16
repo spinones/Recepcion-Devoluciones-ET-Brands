@@ -113,7 +113,7 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 // ====== CONFIGURACIÓN: pega aquí la URL /exec del Apps Script publicado ======
-const VERSION = '2026.11.16-2';
+const VERSION = '2026.11.16-3';
 const API_URL = 'https://script.google.com/macros/s/AKfycbxYHuQd_UwrjCn3LQ0Y_q35DRnTWrO-Yx3UI8MLodUQFWnZaXGCi_zgbD1rwylW-f7k/exec';
 // ============================================================================
 
@@ -177,15 +177,16 @@ async function api(action, body = {}) {
   if (API_URL.startsWith('PEGAR')) throw new Error('Falta configurar API_URL en index.html');
   // Google a veces deja colgada la respuesta (el servidor ya terminó en 2-4 s, pero la entrega tarda minutos).
   // Las lecturas se cortan a los 15 s y se reintentan; las escrituras esperan más y no se repiten solas.
-  const lectura = ['datos', 'catalogo', 'buscarCodigo', 'actividad'].includes(action);
-  const intentos = lectura ? 3 : 1, espera = lectura ? 15000 : 45000;
+  // "recibir" también se reintenta: si el primer intento sí quedó guardado, el servidor responde "yaRecibida" y se toma como ok.
+  const lectura = ['datos', 'catalogo', 'buscarCodigo', 'actividad'].includes(action), reintentable = lectura || action === 'recibir';
+  const intentos = reintentable ? 4 : 1, espera = reintentable ? 12000 : 45000;
   let j;
   for (let i = 0; i < intentos; i++) {
     const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), espera);
     try {
       const r = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({ action, token: S.token, ...body }), signal: ctl.signal });
-      j = await r.json(); clearTimeout(t); break;
+      j = await r.json(); clearTimeout(t); j._intento = i; break;
     } catch (e) {
       clearTimeout(t);
       if (e.name !== 'AbortError') throw e;
@@ -824,7 +825,7 @@ async function recibir(body) {
   document.querySelectorAll('#confirmar,#noIdent').forEach(b => b.disabled = true);
   try {
     const j = await api('recibir', body);
-    if (!j.ok) throw new Error(j.error);
+    if (!j.ok && !(j.yaRecibida && j._intento > 0)) throw new Error(j.error);
     const d = j.devolucion;
     // Se refleja al tiro en pantalla; la recarga completa corre por detrás (antes se esperaba y se sentía pegado).
     if (S.datos) {
