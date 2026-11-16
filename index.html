@@ -113,7 +113,7 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 // ====== CONFIGURACIÓN: pega aquí la URL /exec del Apps Script publicado ======
-const VERSION = '2026.11.10-1';
+const VERSION = '2026.11.16-1';
 const API_URL = 'https://script.google.com/macros/s/AKfycbxYHuQd_UwrjCn3LQ0Y_q35DRnTWrO-Yx3UI8MLodUQFWnZaXGCi_zgbD1rwylW-f7k/exec';
 // ============================================================================
 
@@ -175,8 +175,24 @@ function semaforo(d) {
 
 async function api(action, body = {}) {
   if (API_URL.startsWith('PEGAR')) throw new Error('Falta configurar API_URL en index.html');
-  const r = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action, token: S.token, ...body }) });
-  const j = await r.json();
+  // Google a veces deja colgada la respuesta (el servidor ya terminó en 2-4 s, pero la entrega tarda minutos).
+  // Las lecturas se cortan a los 15 s y se reintentan; las escrituras esperan más y no se repiten solas.
+  const lectura = ['datos', 'catalogo', 'buscarCodigo', 'actividad'].includes(action);
+  const intentos = lectura ? 3 : 1, espera = lectura ? 15000 : 45000;
+  let j;
+  for (let i = 0; i < intentos; i++) {
+    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), espera);
+    try {
+      const r = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action, token: S.token, ...body }), signal: ctl.signal });
+      j = await r.json(); clearTimeout(t); break;
+    } catch (e) {
+      clearTimeout(t);
+      if (e.name !== 'AbortError') throw e;
+      if (i === intentos - 1) throw new Error(lectura ? 'Google no respondió. Intenta de nuevo en un momento.'
+        : 'Google tardó en confirmar. Aprieta ⟳ Actualizar y revisa si quedó guardado antes de repetirlo.');
+    }
+  }
   if (j.sesion === false) { salir(); throw new Error('Tu sesión venció. Ingresa de nuevo.'); }
   return j;
 }
