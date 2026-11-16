@@ -113,7 +113,7 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 // ====== CONFIGURACIÓN: pega aquí la URL /exec del Apps Script publicado ======
-const VERSION = '2026.11.16-1';
+const VERSION = '2026.11.16-2';
 const API_URL = 'https://script.google.com/macros/s/AKfycbxYHuQd_UwrjCn3LQ0Y_q35DRnTWrO-Yx3UI8MLodUQFWnZaXGCi_zgbD1rwylW-f7k/exec';
 // ============================================================================
 
@@ -826,7 +826,12 @@ async function recibir(body) {
     const j = await api('recibir', body);
     if (!j.ok) throw new Error(j.error);
     const d = j.devolucion;
-    await cargar(true);
+    // Se refleja al tiro en pantalla; la recarga completa corre por detrás (antes se esperaba y se sentía pegado).
+    if (S.datos) {
+      S.datos.devoluciones = [d].concat(S.datos.devoluciones.filter(x => x.id !== d.id));
+      if (d.esperada_id) S.datos.esperadas = S.datos.esperadas.filter(e => e.id !== d.esperada_id);
+    }
+    setTimeout(() => cargar(true), 500);
     S.sel = null;
     S.aviso = { t: 'ok', m: `Recibida: ${d.producto || d.codigo_escaneado}. Estado "En ET Brands". Vence ${corta(d.vence_sla)}.` };
     render();
