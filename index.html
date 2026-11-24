@@ -113,8 +113,9 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 // ====== CONFIGURACIÓN: pega aquí la URL /exec del Apps Script publicado ======
-const VERSION = '2026.11.18-1';
-const API_URL = 'https://script.google.com/macros/s/AKfycbxYHuQd_UwrjCn3LQ0Y_q35DRnTWrO-Yx3UI8MLodUQFWnZaXGCi_zgbD1rwylW-f7k/exec';
+const VERSION = '2026.11.24-1';
+// Servidor en Supabase (desde 24-11-2026). Antes: Apps Script …/AKfycbxYHuQd_…/exec (sigue reenviando aquí).
+const API_URL = 'https://xsmnvryiwekhkslzthrv.supabase.co/functions/v1/devoluciones';
 // ============================================================================
 
 const PORTALES = {
@@ -714,18 +715,20 @@ function vistaControl() {
 // lo lee con tu sesión y cierra la pestaña).
 async function correrBot() {
   S.bot = 'Leyendo Falabella y MELI…'; render();
-  const antesFal = S.datos.ultimaSyncFal || '';
+  const antesFal = S.datos.ultimaSyncFal || '', antesMeli = S.datos.ultimaSyncMeli || '';
   const w = window.open('https://sellercenter.falabella.com/order/return#etb-bot', '_blank');
   let msg = '';
-  try { const j = await api('botMeli'); msg = j.ok ? `MELI leído (${j.meli} devoluciones).` : 'MELI: ' + (j.error || 'error'); }
-  catch (e) { msg = 'MELI: ' + e.message; }
-  S.bot = 'Esperando a Falabella…'; render();
-  for (let i = 0; i < 12; i++) {   // hasta ~2 min
-    await cargar(true);
-    if ((S.datos.ultimaSyncFal || '') !== antesFal) break;
+  // MELI lo lee Google (ProfitGuard) en segundo plano: ~1 minuto.
+  try { const j = await api('botMeli'); if (!j.ok) msg = 'MELI: ' + (j.error || 'error') + '.'; }
+  catch (e) { msg = 'MELI: ' + e.message + '.'; }
+  S.bot = 'Esperando a Falabella y MELI…'; render();
+  for (let i = 0; i < 18; i++) {   // hasta ~3 min
     await new Promise(r => setTimeout(r, 10000));
+    await cargar(true);
+    if ((S.datos.ultimaSyncFal || '') !== antesFal && (S.datos.ultimaSyncMeli || '') !== antesMeli) break;
   }
   const falOk = (S.datos.ultimaSyncFal || '') !== antesFal;
+  if (!msg) msg = (S.datos.ultimaSyncMeli || '') !== antesMeli ? 'MELI leído.' : 'MELI sigue leyendo; se verá al actualizar en un rato.';
   S.bot = '';
   S.aviso = { t: falOk ? 'ok' : 'err', m: msg + (falOk ? ' Falabella leído.' : w ? ' Falabella no respondió: revisa la pestaña del Seller Center (¿pide iniciar sesión?) y que la extensión esté recargada.' : ' El navegador bloqueó la pestaña de Falabella: permite ventanas emergentes.') };
   render();
