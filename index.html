@@ -113,7 +113,7 @@
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 // ====== CONFIGURACIÓN: pega aquí la URL /exec del Apps Script publicado ======
-const VERSION = '2026.11.24-1';
+const VERSION = '2026.11.28-1';
 // Servidor en Supabase (desde 24-11-2026). Antes: Apps Script …/AKfycbxYHuQd_…/exec (sigue reenviando aquí).
 const API_URL = 'https://xsmnvryiwekhkslzthrv.supabase.co/functions/v1/devoluciones';
 // ============================================================================
@@ -200,7 +200,7 @@ async function api(action, body = {}) {
   // Google a veces deja colgada la respuesta (el servidor ya terminó en 2-4 s, pero la entrega tarda minutos).
   // Las lecturas se cortan a los 15 s y se reintentan; las escrituras esperan más y no se repiten solas.
   // "recibir" también se reintenta: si el primer intento sí quedó guardado, el servidor responde "yaRecibida" y se toma como ok.
-  const lectura = ['datos', 'catalogo', 'buscarCodigo', 'actividad'].includes(action), reintentable = lectura || action === 'recibir';
+  const lectura = ['datos', 'catalogo', 'buscarCodigo', 'actividad', 'consultarOrden'].includes(action), reintentable = lectura || action === 'recibir';
   const intentos = reintentable ? 4 : 1, espera = reintentable ? 12000 : 45000;
   let j;
   for (let i = 0; i < intentos; i++) {
@@ -1190,6 +1190,7 @@ function vistaReportes() {
   const tot = c => resumen.reduce((a, x) => a + x[c], 0);
   const MAX = 300;
   return `<div><h1>Reportes</h1><p class="sub">Devoluciones procesadas. El resumen por SKU muestra cuántas unidades vuelven a stock (Reintegrable).</p></div>
+  ${tarjetaConsulta()}
   <div class="chips">${chips('per', [['hoy', 'Hoy'], ['7', '7 días'], ['30', '30 días'], ['mes', 'Este mes'], ['todo', 'Todo'], ['rango', 'Rango / mes']])}</div>
   ${F.per === 'rango' ? (() => {
     const h = ahoraChile(), meses = [];
@@ -1212,11 +1213,45 @@ function vistaReportes() {
     ${resumen.map(x => `<tr><td class="mono">${esc(x.sku)}</td><td>${esc(x.producto)}</td><td class="mono" style="font-size:12px">${x.ordenes.map(esc).join('<br>')}</td><td class="mono"><b>${x.Reintegrable || ''}</b></td><td class="mono">${x.Reacondicionable || ''}</td><td class="mono">${x.Merma || ''}</td><td class="mono">${x.total}</td></tr>`).join('')}
     </tbody></table></div>` : '<div class="vacio">Sin devoluciones procesadas con estos filtros.</div>'}</div>
   <div class="card"><h2>Detalle (${filas.length})</h2>${filas.length > MAX ? `<p class="sub">Se muestran las ${MAX} más recientes; el Excel trae todas.</p>` : ''}
-    ${filas.length ? `<div class="tbl"><table><thead><tr><th>Procesada</th><th>Marketplace</th><th>Orden</th><th>SKU</th><th>Producto</th><th>Estado</th><th>Clasificación</th><th>Acción</th><th>Por</th></tr></thead><tbody>
-    ${filas.slice(0, MAX).map(d => `<tr><td class="mono">${corta(d.procesado_en)}</td><td>${esc(d.marketplace)}</td><td class="mono">${esc(d.orden || d.codigo_escaneado)}</td><td class="mono">${esc(d.sku)}</td><td>${esc(d.producto)}</td><td>${esc(d.condicion)}</td><td>${esc(d.clasificacion)}</td><td>${esc(d.accion_mkp)}</td><td>${esc(d.procesado_por)}${d.origen === 'App anterior' ? ' <span class="pill p-gris">app anterior</span>' : ''}</td></tr>`).join('')}
+    ${filas.length ? `<div class="tbl"><table><thead><tr><th>Procesada</th><th>Marketplace</th><th>Orden</th><th>SKU</th><th>Producto</th><th>Motivo</th><th>Estado</th><th>Clasificación</th><th>Acción</th><th>Por</th></tr></thead><tbody>
+    ${filas.slice(0, MAX).map(d => `<tr><td class="mono">${corta(d.procesado_en)}</td><td>${esc(d.marketplace)}</td><td class="mono">${esc(d.orden || d.codigo_escaneado)}</td><td class="mono">${esc(d.sku)}</td><td>${esc(d.producto)}</td><td style="font-size:12px">${esc(d.motivo || '—')}</td><td>${esc(d.condicion)}</td><td>${esc(d.clasificacion)}</td><td>${esc(d.accion_mkp)}</td><td>${esc(d.procesado_por)}${d.origen === 'App anterior' ? ' <span class="pill p-gris">app anterior</span>' : ''}</td></tr>`).join('')}
     </tbody></table></div>` : '<div class="vacio">Sin datos.</div>'}</div>`;
 }
+// Buscar una orden: por qué se devolvió y qué resolvió la bodega (todo el historial, en el servidor).
+function tarjetaConsulta() {
+  const C = S.consulta || {}, x = C.res;
+  const fila = (k, v) => v ? `<span>${k}</span><b>${v}</b>` : '';
+  const caja = f => {
+    const fotos = String(f.fotos || '').split(/\s+/).filter(Boolean);
+    const res = f.tipo === 'recibida'
+      ? (f.procesado_en
+        ? `<div class="msg ok"><b>Resolución bodega:</b> ${esc(f.condicion || '—')} · ${esc(f.clasificacion || '—')} · ${esc(f.accion_mkp || '—')}${f.corresponde === 'No' ? ' · <b>llegó otro producto o cantidad</b>' : ''}
+           <br><small>${esc(f.procesado_por)} · ${corta(f.procesado_en)}${f.comentario ? ' · “' + esc(f.comentario) + '”' : ''}</small>
+           ${fotos.length ? `<br><small>${fotos.map((u, i) => `<a href="${esc(u)}" target="_blank" rel="noopener">Foto ${i + 1}</a>`).join(' · ')}</small>` : ''}</div>`
+        : `<div class="msg warn">Recibida el ${corta(f.recibido_en)} por ${esc(f.recibido_por)} · aún sin procesar (${esc(f.estado)})</div>`)
+      : `<div class="msg">${f.recibida === 'Si' ? 'Recibida' : 'Todavía no llega a bodega'}${f.cerrada_mkp ? ' · cerrada en el portal' : ''}</div>`;
+    return `<div class="item"><div class="r1"><span class="prod">${esc(f.producto || f.sku || 'Sin detalle')}</span><span class="pill p-gris">${esc(f.marketplace || '')}</span></div>
+      <div class="kv">${fila('Orden', `<span class="mono">${esc(f.orden)}</span>${f.venta && f.venta !== f.orden ? ` · venta <span class="mono">${esc(f.venta)}</span>` : ''}`)}${fila('SKU', esc(f.sku))}${fila('Cantidad', esc(f.cantidad))}
+      ${fila('Motivo de la devolución', esc(f.motivo || 'Sin motivo informado'))}${fila('Estado en el portal', esc(f.estado_mkp))}${fila('Recibida', f.recibido_en ? corta(f.recibido_en) + ' · ' + esc(f.recibido_por) : '')}</div>
+      ${res}${f.link ? `<a href="${esc(f.link)}" target="_blank" rel="noopener" style="font-size:13px">Ver en el portal ↗</a>` : ''}</div>`;
+  };
+  return `<div class="card"><h2>Buscar una orden</h2><p class="sub">Por qué se devolvió y qué resolvió la bodega. Busca en todo el historial.</p>
+    <div class="fila"><label class="f esp">Nº de orden, venta o tracking<input id="coq" value="${esc(C.q || '')}" autocomplete="off" placeholder="Ej. 3255166016"></label>
+    <button class="btn" id="cob" ${C.cargando ? 'disabled' : ''}>${C.cargando ? 'Buscando…' : 'Buscar'}</button></div>
+    ${C.error ? `<div class="msg err">${esc(C.error)}</div>` : ''}
+    ${x ? (x.filas.length ? `<div class="lista">${x.filas.map(caja).join('')}</div>${x.total > x.filas.length ? `<p class="sub">Se muestran ${x.filas.length} de ${x.total}.</p>` : ''}`
+      : '<div class="vacio">No hay devoluciones con ese número.</div>') : ''}</div>`;
+}
+async function consultarOrden() {
+  const q = ($('#coq').value || '').trim();
+  S.consulta = { q, cargando: true }; render();
+  try { const j = await api('consultarOrden', { q }); S.consulta = j.ok ? { q, res: j } : { q, error: j.error }; }
+  catch (e) { S.consulta = { q, error: e.message }; }
+  render();
+}
 function ligarReportes() {
+  $('#cob').onclick = consultarOrden;
+  $('#coq').onkeydown = e => { if (e.key === 'Enter') consultarOrden(); };
   document.querySelectorAll('[data-rp]').forEach(b => b.onclick = () => {
     S.rp[b.dataset.rp] = b.dataset.val;
     if (b.dataset.val === 'rango' && !S.rp.desde) { const h = ahoraChile(); S.rp.desde = ymd(new Date(h.getFullYear(), h.getMonth(), 1)); S.rp.hasta = ymd(h); }
